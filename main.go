@@ -60,56 +60,36 @@ func main() {
 	}
 	for _, rowGroup := range fileMD.RowGroups {
 		for _, col := range rowGroup.Columns {
+			var dictVals []interface{}
 			fmt.Println(col.MetaData)
 			dictOffset := col.MetaData.DictionaryPageOffset
 			if dictOffset != nil {
 				fmt.Println("Will read dict from", *dictOffset)
 				_, err := r.Seek(*dictOffset, io.SeekStart)
 				must(err)
-				dictPageHeader, err := readPageHeader(ctx, r, col.MetaData.GetTotalCompressedSize())
+				dictPageHeader, err := readPageHeader(ctx, r)
 				must(err)
 
-				fmt.Println(dictPageHeader)
-				vals := readDictPage(col.MetaData, dictPageHeader, r)
-				fmt.Println(vals)
+				dictVals = readDictPage(col.MetaData, dictPageHeader, r)
+				fmt.Println(dictVals)
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
 			fmt.Println("Will read data from", dataOffset)
 			_, err := r.Seek(dataOffset, io.SeekStart)
 			must(err)
-			dataPageHeader, err := readPageHeader(ctx, r, col.MetaData.GetTotalCompressedSize())
+			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
-			fmt.Println(dataPageHeader)
 
+			vals := readDataPage(dataPageHeader, r,  dictVals)
+			fmt.Println(vals[:10])
 			break
 	
 		}
 	}
-
-
-	/*buffer := bytes.NewBuffer(data)
-	buf := &thrift.TMemoryBuffer{
-		Buffer: buffer,
-	}
-	thriftReader := thrift.NewTCompactProtocol(buf)
-
-       	pageHeader := parquet.NewPageHeader()
-       	err = pageHeader.Read(context.TODO(), thriftReader)
-	must(err)
-	fmt.Println(pageHeader)
-
-	switch pageHeader.Type {
-	case parquet.PageType_DICTIONARY_PAGE:
-		out := make([]byte, pageHeader.CompressedPageSize)
-		_, _ = buffer.Read(out)
-	case parquet.PageType_DATA_PAGE:
-		out := make([]byte, pageHeader.CompressedPageSize)
-		_, _ = buffer.Read(out)
-	}*/
 }
 
-func readPageHeader(ctx context.Context, r io.Reader, size int64) (*parquet.PageHeader, error) {
+func readPageHeader(ctx context.Context, r io.Reader) (*parquet.PageHeader, error) {
 	proto := thrift.NewTCompactProtocol(&thrift.StreamTransport{Reader: r})
        	pageHeader := parquet.NewPageHeader()
        	err := pageHeader.Read(ctx, proto)
@@ -117,8 +97,9 @@ func readPageHeader(ctx context.Context, r io.Reader, size int64) (*parquet.Page
 }
 
 func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) []interface{} {
-	fmt.Println(col)
-	fmt.Println(header)
+	if header.Type != parquet.PageType_DICTIONARY_PAGE {
+		panic("wrong page type")
+	}
 
 	vals := make([]interface{}, header.DictionaryPageHeader.NumValues)
 
@@ -139,4 +120,49 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		panic("Cannot read type: " + col.Type.String())
 	}
 	return vals
+}
+
+func readDataPage(header *parquet.PageHeader, r io.Reader, dictVals []interface{}) []interface{} {
+	if header.Type != parquet.PageType_DATA_PAGE {
+		panic("wrong page type")
+	}
+	if header.DataPageHeader.Encoding != parquet.Encoding_PLAIN_DICTIONARY {
+		panic("wrong encoding")
+	}
+	vals := make([]interface{}, header.DataPageHeader.NumValues)
+	fmt.Println(header)
+
+	fmt.Println(r)
+	
+	var size uint32
+	err := binary.Read(r, binary.LittleEndian, &size)
+	must(err)
+	fmt.Println("size: ", size)
+
+	bitWidth := 3
+	/*buf := make([]byte, 1)
+	_, err = r.Read(buf)
+	must(err)
+	bitWidth = int(buf[0])
+	fmt.Println("bitwdith: ", bitWidth)*/
+
+	scratch := make([]byte, bitWidth)
+	_, err = r.Read(scratch)
+	must(err)
+	unpacked := unpack8int32_3(scratch)
+	fmt.Println(unpacked)
+
+	return vals
+}
+
+func unpack8int32_3(data []byte) (out [8]int32) {
+	out[0] = int32(uint32((data[0]>>0)&7) << 0)
+	out[1] = int32(uint32((data[0]>>3)&7) << 0)
+	out[2] = int32(uint32((data[0]>>6)&3) << 0 | uint32((data[1]>>0)&1)<<2)
+	out[3] = int32(uint32((data[1]>>1)&7) << 0)
+	out[4] = int32(uint32((data[1]>>4)&7) << 0)
+	out[5] = int32(uint32((data[1]>>7)&1) << 0 | uint32((data[2]>>0)&3)<<1)
+	out[6] = int32(uint32((data[2]>>2)&7) << 0)
+	out[7] = int32(uint32((data[2]>>5)&7) << 0)
+	return
 }
