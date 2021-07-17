@@ -71,7 +71,7 @@ func main() {
 				must(err)
 
 				dictVals = readDictPage(col.MetaData, dictPageHeader, r)
-				fmt.Println(dictVals)
+				//fmt.Println(dictVals)
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
@@ -82,9 +82,12 @@ func main() {
 			must(err)
 
 			vals := readDataPage(dataPageHeader, r,  dictVals)
-			fmt.Println(vals[:10])
-			break
 	
+			out := make([]float64, len(vals))
+			for i, v := range vals {
+				out[i] = dictVals[v.(int32)].(float64)
+			}
+			fmt.Println(out)
 		}
 	}
 }
@@ -122,7 +125,8 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 	return vals
 }
 
-func readDataPage(header *parquet.PageHeader, r io.Reader, dictVals []interface{}) []interface{} {
+func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) []interface{} {
+	fmt.Println(header)
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
 	}
@@ -132,27 +136,97 @@ func readDataPage(header *parquet.PageHeader, r io.Reader, dictVals []interface{
 	vals := make([]interface{}, header.DataPageHeader.NumValues)
 	fmt.Println(header)
 
-	fmt.Println(r)
-	
+	buf2 := make([]byte, header.UncompressedPageSize)
+	_, err2 := io.ReadFull(r, buf2)
+	must(err2)
+	fmt.Println(buf2)
+	r = bytes.NewReader(buf2)
+
 	var size uint32
 	err := binary.Read(r, binary.LittleEndian, &size)
 	must(err)
 	fmt.Println("size: ", size)
 
-	bitWidth := 3
-	/*buf := make([]byte, 1)
+	// TODO: This might be repition level actually
+	// TODO: Figure out where to compute max def level
+	// TODO: need these to handle nullability correctly?
+	readHybrid(&byteReader{io.LimitReader(r, int64(size))},
+		1, nil) // max definition level = 1
+
+	fmt.Println("Real r pre", r)
+	buf := make([]byte, 1)
 	_, err = r.Read(buf)
 	must(err)
-	bitWidth = int(buf[0])
-	fmt.Println("bitwdith: ", bitWidth)*/
-
-	scratch := make([]byte, bitWidth)
-	_, err = r.Read(scratch)
-	must(err)
-	unpacked := unpack8int32_3(scratch)
-	fmt.Println(unpacked)
-
+	bitWidth := int(buf[0])
+	fmt.Println("Will read with bitwidth ", bitWidth)
+	fmt.Println("Real r post", r)
+	readHybrid(r, bitWidth, vals[:0])
 	return vals
+}
+
+type byteReader struct {
+	io.Reader
+}
+
+func (b *byteReader) ReadByte() (byte, error) {
+	buf := make([]byte, 1)
+	_, err := b.Reader.Read(buf)
+	return buf[0], err
+}
+
+func (b* byteReader) print() {
+	fmt.Println(b.Reader)
+}
+
+type reader interface {
+	io.Reader
+	io.ByteReader
+}
+
+func readHybrid(r reader, bitWidth int, vals []interface{}) {
+	for {
+		header, err := binary.ReadUvarint(r)
+		if err == io.EOF {
+			return
+		}
+		fmt.Println("head", header)
+		if (header & 1) != 0{
+			bitPackedRunLen := (header >> 1)
+
+			for i := uint64(0); i < bitPackedRunLen; i++ {
+				scratch := make([]byte, bitWidth)
+				_, err = r.Read(scratch)
+				must(err)
+
+				var unpacked [8]int32
+				switch bitWidth {
+				case 3:
+					unpacked = unpack8int32_3(scratch)
+				case 4:
+					unpacked = unpack8int32_4(scratch)
+				default:
+					panic("Unhandled bitwidth")
+				}
+				for _, b := range unpacked {
+					vals = append(vals, b)
+				}
+			}
+		} else {
+			rleRunLen := header >> 1
+			buf := make([]byte, (bitWidth + 7) / 8)
+			_, err = r.Read(buf)
+			must(err)
+			if len(buf) != 1 {
+				panic("need to read bigger ints")
+			}
+			repeatedVal := buf[0]
+
+			fmt.Printf("run len: %v, val: %v\n", rleRunLen, repeatedVal)
+			for j := uint64(0); j < rleRunLen; j++ {
+				vals = append(vals, int32(repeatedVal))
+			}
+		}
+	}
 }
 
 func unpack8int32_3(data []byte) (out [8]int32) {
@@ -164,5 +238,17 @@ func unpack8int32_3(data []byte) (out [8]int32) {
 	out[5] = int32(uint32((data[1]>>7)&1) << 0 | uint32((data[2]>>0)&3)<<1)
 	out[6] = int32(uint32((data[2]>>2)&7) << 0)
 	out[7] = int32(uint32((data[2]>>5)&7) << 0)
+	return
+}
+
+func unpack8int32_4(data []byte) (out [8]int32) {
+	out[0] = int32(uint32((data[0]>>0)&15) << 0)
+	out[1] = int32(uint32((data[0]>>4)&15) << 0)
+	out[2] = int32(uint32((data[1]>>0)&15) << 0)
+	out[3] = int32(uint32((data[1]>>4)&15) << 0)
+	out[4] = int32(uint32((data[2]>>0)&15) << 0)
+	out[5] = int32(uint32((data[2]>>4)&15) << 0)
+	out[6] = int32(uint32((data[3]>>0)&15) << 0)
+	out[7] = int32(uint32((data[3]>>4)&15) << 0)
 	return
 }
