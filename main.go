@@ -1,12 +1,13 @@
 package main
 
 import (
-	"os"
-	"encoding/binary"
 	"bytes"
-	"fmt"
 	"context"
+	"encoding/binary"
+	"fmt"
 	"io"
+	"os"
+	"reflect"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -14,6 +15,10 @@ import (
 	"parquet/float"
 	"parquet/parquet"
 )
+
+type Test struct {
+	Test float64 `parquet:"test"`
+}
 
 func must(err error) {
 	if err != nil {
@@ -26,13 +31,17 @@ func isMagic(d []byte) bool {
 }
 
 func main() {
-	ctx := context.TODO()
-
 	f, err := os.Open(os.Args[1])
 	must(err)
 
 	data, err := io.ReadAll(f)
 	must(err)
+
+	fmt.Println(parse(data))
+}
+
+func parse(data []byte) []Test {
+	ctx := context.TODO()
 
 	if !isMagic(data[:4]) || !isMagic(data[len(data)-4:]) {
 		panic("Not a parquet file")
@@ -40,7 +49,7 @@ func main() {
 
 	// Read footer size from end
 	r := bytes.NewReader(data)
-	_, err = r.Seek(-8, io.SeekEnd)
+	_, err := r.Seek(-8, io.SeekEnd)
 	must(err)
 	sizeBuf := make([]byte, 4)
 	_, err = r.Read(sizeBuf)
@@ -48,23 +57,35 @@ func main() {
 	size := binary.LittleEndian.Uint32(sizeBuf)
 
 	// Read footer
-	_, err = r.Seek(-8 - int64(size), io.SeekEnd)
+	_, err = r.Seek(-8-int64(size), io.SeekEnd)
 	must(err)
 	footerReader := thrift.NewTCompactProtocol(&thrift.StreamTransport{Reader: r})
 	fileMD := parquet.NewFileMetaData()
-       	err = fileMD.Read(ctx, footerReader)
+	err = fileMD.Read(ctx, footerReader)
 	must(err)
-	for _, s := range fileMD.Schema {
-		_ = s
-		//fmt.Println(s)
-	}
+	destStructs := make([]Test, fileMD.NumRows)
 	for _, rowGroup := range fileMD.RowGroups {
 		for _, col := range rowGroup.Columns {
+			_ = destStructs
+
+			fieldIndex := -1
+			ty := reflect.TypeOf(destStructs[0])
+			for i := 0; i < ty.NumField(); i++ {
+				tag := ty.Field(i).Tag.Get("parquet")
+				if tag == col.MetaData.PathInSchema[0] {
+					fieldIndex = i
+					break
+				}
+			}
+			if fieldIndex == -1 {
+				panic("field not found")
+			}
+
 			var dictVals []interface{}
-			fmt.Println(col.MetaData)
+			//fmt.Println(col.MetaData)
 			dictOffset := col.MetaData.DictionaryPageOffset
 			if dictOffset != nil {
-				fmt.Println("Will read dict from", *dictOffset)
+				//fmt.Println("Will read dict from", *dictOffset)
 				_, err := r.Seek(*dictOffset, io.SeekStart)
 				must(err)
 				dictPageHeader, err := readPageHeader(ctx, r)
@@ -75,27 +96,27 @@ func main() {
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
-			fmt.Println("Will read data from", dataOffset)
+			//fmt.Println("Will read data from", dataOffset)
 			_, err := r.Seek(dataOffset, io.SeekStart)
 			must(err)
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-			vals := readDataPage(dataPageHeader, r,  dictVals)
-	
-			out := make([]float64, len(vals))
+			vals := readDataPage(dataPageHeader, r, dictVals)
+
 			for i, v := range vals {
-				out[i] = dictVals[v.(int32)].(float64)
+				s := reflect.ValueOf(&destStructs[i]).Elem()
+				s.Field(fieldIndex).SetFloat(dictVals[v.(int32)].(float64))
 			}
-			fmt.Println(out)
 		}
 	}
+	return destStructs
 }
 
 func readPageHeader(ctx context.Context, r io.Reader) (*parquet.PageHeader, error) {
 	proto := thrift.NewTCompactProtocol(&thrift.StreamTransport{Reader: r})
-       	pageHeader := parquet.NewPageHeader()
-       	err := pageHeader.Read(ctx, proto)
+	pageHeader := parquet.NewPageHeader()
+	err := pageHeader.Read(ctx, proto)
 	return pageHeader, err
 }
 
@@ -126,7 +147,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 }
 
 func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) []interface{} {
-	fmt.Println(header)
+	//fmt.Println(header)
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
 	}
@@ -134,18 +155,18 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 		panic("wrong encoding")
 	}
 	vals := make([]interface{}, header.DataPageHeader.NumValues)
-	fmt.Println(header)
+	//fmt.Println(header)
 
 	buf2 := make([]byte, header.UncompressedPageSize)
 	_, err2 := io.ReadFull(r, buf2)
 	must(err2)
-	fmt.Println(buf2)
+	//fmt.Println(buf2)
 	r = bytes.NewReader(buf2)
 
 	var size uint32
 	err := binary.Read(r, binary.LittleEndian, &size)
 	must(err)
-	fmt.Println("size: ", size)
+	//fmt.Println("size: ", size)
 
 	// TODO: This might be repition level actually
 	// TODO: Figure out where to compute max def level
@@ -153,13 +174,11 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	readHybrid(&byteReader{io.LimitReader(r, int64(size))},
 		1, nil) // max definition level = 1
 
-	fmt.Println("Real r pre", r)
 	buf := make([]byte, 1)
 	_, err = r.Read(buf)
 	must(err)
 	bitWidth := int(buf[0])
-	fmt.Println("Will read with bitwidth ", bitWidth)
-	fmt.Println("Real r post", r)
+
 	readHybrid(r, bitWidth, vals[:0])
 	return vals
 }
@@ -174,10 +193,6 @@ func (b *byteReader) ReadByte() (byte, error) {
 	return buf[0], err
 }
 
-func (b* byteReader) print() {
-	fmt.Println(b.Reader)
-}
-
 type reader interface {
 	io.Reader
 	io.ByteReader
@@ -189,8 +204,8 @@ func readHybrid(r reader, bitWidth int, vals []interface{}) {
 		if err == io.EOF {
 			return
 		}
-		fmt.Println("head", header)
-		if (header & 1) != 0{
+		//fmt.Println("head", header)
+		if (header & 1) != 0 {
 			bitPackedRunLen := (header >> 1)
 
 			for i := uint64(0); i < bitPackedRunLen; i++ {
@@ -213,7 +228,7 @@ func readHybrid(r reader, bitWidth int, vals []interface{}) {
 			}
 		} else {
 			rleRunLen := header >> 1
-			buf := make([]byte, (bitWidth + 7) / 8)
+			buf := make([]byte, (bitWidth+7)/8)
 			_, err = r.Read(buf)
 			must(err)
 			if len(buf) != 1 {
@@ -221,7 +236,7 @@ func readHybrid(r reader, bitWidth int, vals []interface{}) {
 			}
 			repeatedVal := buf[0]
 
-			fmt.Printf("run len: %v, val: %v\n", rleRunLen, repeatedVal)
+			//fmt.Printf("run len: %v, val: %v\n", rleRunLen, repeatedVal)
 			for j := uint64(0); j < rleRunLen; j++ {
 				vals = append(vals, int32(repeatedVal))
 			}
@@ -232,10 +247,10 @@ func readHybrid(r reader, bitWidth int, vals []interface{}) {
 func unpack8int32_3(data []byte) (out [8]int32) {
 	out[0] = int32(uint32((data[0]>>0)&7) << 0)
 	out[1] = int32(uint32((data[0]>>3)&7) << 0)
-	out[2] = int32(uint32((data[0]>>6)&3) << 0 | uint32((data[1]>>0)&1)<<2)
+	out[2] = int32(uint32((data[0]>>6)&3)<<0 | uint32((data[1]>>0)&1)<<2)
 	out[3] = int32(uint32((data[1]>>1)&7) << 0)
 	out[4] = int32(uint32((data[1]>>4)&7) << 0)
-	out[5] = int32(uint32((data[1]>>7)&1) << 0 | uint32((data[2]>>0)&3)<<1)
+	out[5] = int32(uint32((data[1]>>7)&1)<<0 | uint32((data[2]>>0)&3)<<1)
 	out[6] = int32(uint32((data[2]>>2)&7) << 0)
 	out[7] = int32(uint32((data[2]>>5)&7) << 0)
 	return
