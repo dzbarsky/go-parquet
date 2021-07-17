@@ -8,6 +8,7 @@ import (
 var out []Test
 
 // BenchmarkParse-16    	     182	   6275511 ns/op	11681615 B/op	     194 allocs/op
+// BenchmarkParse-16    	     340	   3388624 ns/op	 2434344 B/op	     166 allocs/op
 func BenchmarkParse(b *testing.B) {
 	data, err := os.ReadFile("repeated_bigger.parquet")
 	if err != nil {

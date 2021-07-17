@@ -154,7 +154,7 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	if header.DataPageHeader.Encoding != parquet.Encoding_PLAIN_DICTIONARY {
 		panic("wrong encoding")
 	}
-	vals := make([]interface{}, header.DataPageHeader.NumValues)
+	vals := make([]interface{}, 0, header.DataPageHeader.NumValues)
 	//fmt.Println(header)
 
 	buf2 := make([]byte, header.UncompressedPageSize)
@@ -171,15 +171,36 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	// TODO: This might be repition level actually
 	// TODO: Figure out where to compute max def level
 	// TODO: need these to handle nullability correctly?
-	readHybrid(&byteReader{io.LimitReader(r, int64(size))},
-		1, nil) // max definition level = 1
+	hr := &hybridReader{
+		r:        &byteReader{io.LimitReader(r, int64(size))},
+		bitWidth: 1, // max definition level = 1
+	}
+
+	for {
+		_, err := hr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	buf := make([]byte, 1)
 	_, err = r.Read(buf)
 	must(err)
 	bitWidth := int(buf[0])
 
-	readHybrid(r, bitWidth, vals[:0])
+	hr = &hybridReader{r: r, bitWidth: bitWidth}
+	for {
+		val, err := hr.Next()
+		if err == io.EOF {
+			break
+		}
+		must(err)
+		vals = append(vals, val)
+	}
+
 	return vals
 }
 
@@ -191,79 +212,4 @@ func (b *byteReader) ReadByte() (byte, error) {
 	buf := make([]byte, 1)
 	_, err := b.Reader.Read(buf)
 	return buf[0], err
-}
-
-type reader interface {
-	io.Reader
-	io.ByteReader
-}
-
-func readHybrid(r reader, bitWidth int, vals []interface{}) {
-	for {
-		header, err := binary.ReadUvarint(r)
-		if err == io.EOF {
-			return
-		}
-		//fmt.Println("head", header)
-		if (header & 1) != 0 {
-			bitPackedRunLen := (header >> 1)
-
-			for i := uint64(0); i < bitPackedRunLen; i++ {
-				scratch := make([]byte, bitWidth)
-				_, err = r.Read(scratch)
-				must(err)
-
-				var unpacked [8]int32
-				switch bitWidth {
-				case 3:
-					unpacked = unpack8int32_3(scratch)
-				case 4:
-					unpacked = unpack8int32_4(scratch)
-				default:
-					panic("Unhandled bitwidth")
-				}
-				for _, b := range unpacked {
-					vals = append(vals, b)
-				}
-			}
-		} else {
-			rleRunLen := header >> 1
-			buf := make([]byte, (bitWidth+7)/8)
-			_, err = r.Read(buf)
-			must(err)
-			if len(buf) != 1 {
-				panic("need to read bigger ints")
-			}
-			repeatedVal := buf[0]
-
-			//fmt.Printf("run len: %v, val: %v\n", rleRunLen, repeatedVal)
-			for j := uint64(0); j < rleRunLen; j++ {
-				vals = append(vals, int32(repeatedVal))
-			}
-		}
-	}
-}
-
-func unpack8int32_3(data []byte) (out [8]int32) {
-	out[0] = int32(uint32((data[0]>>0)&7) << 0)
-	out[1] = int32(uint32((data[0]>>3)&7) << 0)
-	out[2] = int32(uint32((data[0]>>6)&3)<<0 | uint32((data[1]>>0)&1)<<2)
-	out[3] = int32(uint32((data[1]>>1)&7) << 0)
-	out[4] = int32(uint32((data[1]>>4)&7) << 0)
-	out[5] = int32(uint32((data[1]>>7)&1)<<0 | uint32((data[2]>>0)&3)<<1)
-	out[6] = int32(uint32((data[2]>>2)&7) << 0)
-	out[7] = int32(uint32((data[2]>>5)&7) << 0)
-	return
-}
-
-func unpack8int32_4(data []byte) (out [8]int32) {
-	out[0] = int32(uint32((data[0]>>0)&15) << 0)
-	out[1] = int32(uint32((data[0]>>4)&15) << 0)
-	out[2] = int32(uint32((data[1]>>0)&15) << 0)
-	out[3] = int32(uint32((data[1]>>4)&15) << 0)
-	out[4] = int32(uint32((data[2]>>0)&15) << 0)
-	out[5] = int32(uint32((data[2]>>4)&15) << 0)
-	out[6] = int32(uint32((data[3]>>0)&15) << 0)
-	out[7] = int32(uint32((data[3]>>4)&15) << 0)
-	return
 }
