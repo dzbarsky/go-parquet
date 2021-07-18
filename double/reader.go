@@ -9,6 +9,7 @@ import (
 type Reader struct{
 	r io.Reader
 	err error
+	buf [8]byte
 }
 
 func NewReader(r io.Reader) *Reader {
@@ -19,9 +20,9 @@ func (r* Reader) Next() float64 {
 	if r.err != nil {
 		return 0
 	}
-	var data uint64
-	r.err = binary.Read(r.r, binary.LittleEndian, &data)
-	return math.Float64frombits(data)
+	data := r.buf[:]
+	_, r.err = r.r.Read(data)
+	return math.Float64frombits(binary.LittleEndian.Uint64(data))
 }
 
 func (r* Reader) Error() error {
