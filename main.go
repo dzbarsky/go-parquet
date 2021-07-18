@@ -65,10 +65,9 @@ func parse(data []byte) []Test {
 	err = fileMD.Read(ctx, footerReader)
 	must(err)
 	destStructs := make([]Test, fileMD.NumRows)
+	previousRowGroupsTotalRows := 0
 	for _, rowGroup := range fileMD.RowGroups {
 		for _, col := range rowGroup.Columns {
-			_ = destStructs
-
 			fieldIndex := -1
 			ty := reflect.TypeOf(destStructs[0])
 			for i := 0; i < ty.NumField(); i++ {
@@ -110,16 +109,18 @@ func parse(data []byte) []Test {
 			vals := readDataPage(dataPageHeader, r, dictVals)
 
 			for i, v:= range vals {
+				idx := previousRowGroupsTotalRows + i
 				floatVal := dictVals[v.(int32)].(float64)
 				// reflect way is slower but safer
 				// may want a hybrid approach if we get to decoding nested structures.
-				//s := reflect.ValueOf(&destStructs[i]).Elem()
+				//s := reflect.ValueOf(&destStructs[idx]).Elem()
 				//s.Field(fieldIndex).SetFloat(floatVal)
 
-				newP := unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[i])) + uintptr(offset))
+				newP := unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[idx])) + uintptr(offset))
 				*(*float64)(newP) = floatVal
 			}
 		}
+		previousRowGroupsTotalRows += int(rowGroup.NumRows)
 	}
 	return destStructs
 }
