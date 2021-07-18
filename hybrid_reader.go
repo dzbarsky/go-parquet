@@ -26,7 +26,7 @@ type hybridReader struct {
 	scratch         []byte
 }
 
-func (hr *hybridReader) Next() (interface{}, error) {
+func (hr *hybridReader) Next() (int32, error) {
 	if hr.rleRemaining > 0 {
 		//fmt.Printf("run length: %v, val: %v\n", hr.rleRemaining, hr.rleValue)
 		hr.rleRemaining -= 1
@@ -40,19 +40,19 @@ func (hr *hybridReader) Next() (interface{}, error) {
 	if hr.bitPackedRemaining > 0 {
 		err := hr.read8BitPackedValues()
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 		return hr.nextUnpackedValue(), nil
 	}
 
 	err := hr.readMore()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	return hr.Next()
 }
 
-func (hr *hybridReader) nextUnpackedValue() interface{} {
+func (hr *hybridReader) nextUnpackedValue() int32 {
 	ret := hr.unpacked[0]
 	hr.unpacked = hr.unpacked[1:]
 	return ret

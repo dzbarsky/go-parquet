@@ -110,7 +110,7 @@ func parse(data []byte) []Test {
 
 			for i, v := range vals {
 				idx := previousRowGroupsTotalRows + i
-				floatVal := dictVals[v.(int32)].(float64)
+				floatVal := dictVals[v].(float64)
 				// reflect way is slower but safer
 				// may want a hybrid approach if we get to decoding nested structures.
 				//s := reflect.ValueOf(&destStructs[idx]).Elem()
@@ -158,7 +158,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 	return vals
 }
 
-func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) []interface{} {
+func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) []int32 {
 	//fmt.Println(header)
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
@@ -166,7 +166,7 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	if header.DataPageHeader.Encoding != parquet.Encoding_PLAIN_DICTIONARY {
 		panic("wrong encoding")
 	}
-	vals := make([]interface{}, 0, header.DataPageHeader.NumValues)
+	vals := make([]int32, 0, header.DataPageHeader.NumValues)
 	//fmt.Println(header)
 
 	buf2 := make([]byte, header.UncompressedPageSize)
