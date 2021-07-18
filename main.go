@@ -12,6 +12,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 
+	"parquet/bytearray"
 	"parquet/double"
 	"parquet/float"
 	"parquet/parquet"
@@ -19,6 +20,8 @@ import (
 
 type Test struct {
 	Test float64 `parquet:"test"`
+	//TestInt int64 `parquet:"test_int"`
+	TestString []byte `parquet:"test_str"`
 }
 
 func must(err error) {
@@ -78,7 +81,9 @@ func parse(data []byte) []Test {
 				}
 			}
 			if fieldIndex == -1 {
-				panic("field not found")
+				fmt.Printf("Ignoring column %s\n", col.MetaData.PathInSchema[0])
+				continue
+				// panic("field not found")
 			}
 			s := reflect.ValueOf(&destStructs[0]).Elem()
 			addr := s.UnsafeAddr()
@@ -108,16 +113,27 @@ func parse(data []byte) []Test {
 
 			vals := readDataPage(dataPageHeader, r, dictVals)
 
+			//fmt.Println(vals)
+			//fmt.Println(dictVals)
 			for i, v := range vals {
 				idx := previousRowGroupsTotalRows + i
-				floatVal := dictVals[v].(float64)
 				// reflect way is slower but safer
 				// may want a hybrid approach if we get to decoding nested structures.
 				//s := reflect.ValueOf(&destStructs[idx]).Elem()
+				//floatVal := dictVals[v].(float64)
 				//s.Field(fieldIndex).SetFloat(floatVal)
 
 				newP := unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[idx])) + uintptr(offset))
-				*(*float64)(newP) = floatVal
+				switch col.MetaData.Type {
+				case parquet.Type_FLOAT:
+					*(*float32)(newP) = dictVals[v].(float32)
+				case parquet.Type_DOUBLE:
+					*(*float64)(newP) = dictVals[v].(float64)
+				case parquet.Type_BYTE_ARRAY:
+					*(*[]byte)(newP) = dictVals[v].([]byte)
+				default:
+					panic("Cannot read type: " + col.MetaData.Type.String())
+				}
 			}
 		}
 		previousRowGroupsTotalRows += int(rowGroup.NumRows)
@@ -152,6 +168,12 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 			vals[i] = dr.Next()
 		}
 		must(dr.Error())
+	case parquet.Type_BYTE_ARRAY:
+		bar := bytearray.NewReader(&byteReader{r})
+		for i := range vals {
+			vals[i] = bar.Next()
+		}
+		must(bar.Error())
 	default:
 		panic("Cannot read type: " + col.Type.String())
 	}
