@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -63,8 +64,10 @@ func (hr *hybridReader) readMore() error {
 				unpacked = unpack8int32_3(scratch)
 			case 4:
 				unpacked = unpack8int32_4(scratch)
+			case 14:
+				unpacked = unpack8int32_14(scratch)
 			default:
-				panic("Unhandled bitwidth")
+				panic(fmt.Sprintf("Unhandled bitwidth %v", hr.bitWidth))
 			}
 			hr.unpacked = append(hr.unpacked, unpacked[:]...)
 		}
@@ -104,5 +107,17 @@ func unpack8int32_4(data []byte) (out [8]int32) {
 	out[5] = int32(uint32((data[2]>>4)&15) << 0)
 	out[6] = int32(uint32((data[3]>>0)&15) << 0)
 	out[7] = int32(uint32((data[3]>>4)&15) << 0)
+	return
+}
+
+func unpack8int32_14(data []byte) (out [8]int32) {
+	out[0] = int32(uint32((data[0]>>0)&255)<<0 | uint32((data[1]>>0)&63)<<8)
+	out[1] = int32(uint32((data[1]>>6)&3)<<0 | uint32((data[2]>>0)&255)<<2 | uint32((data[3]>>0)&15)<<10)
+	out[2] = int32(uint32((data[3]>>4)&15)<<0 | uint32((data[4]>>0)&255)<<4 | uint32((data[5]>>0)&3)<<12)
+	out[3] = int32(uint32((data[5]>>2)&63)<<0 | uint32((data[6]>>0)&255)<<6)
+	out[4] = int32(uint32((data[7]>>0)&255)<<0 | uint32((data[8]>>0)&63)<<8)
+	out[5] = int32(uint32((data[8]>>6)&3)<<0 | uint32((data[9]>>0)&255)<<2 | uint32((data[10]>>0)&15)<<10)
+	out[6] = int32(uint32((data[10]>>4)&15)<<0 | uint32((data[11]>>0)&255)<<4 | uint32((data[12]>>0)&3)<<12)
+	out[7] = int32(uint32((data[12]>>2)&63)<<0 | uint32((data[13]>>0)&255)<<6)
 	return
 }
