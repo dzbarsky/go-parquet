@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"unsafe"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -80,6 +81,10 @@ func parse(data []byte) []Test {
 			if fieldIndex == -1 {
 				panic("field not found")
 			}
+			s := reflect.ValueOf(&destStructs[0]).Elem()
+			addr := s.UnsafeAddr()
+			addr2 := s.Field(fieldIndex).UnsafeAddr()
+			offset := addr2 - addr
 
 			var dictVals []interface{}
 			//fmt.Println(col.MetaData)
@@ -104,9 +109,15 @@ func parse(data []byte) []Test {
 
 			vals := readDataPage(dataPageHeader, r, dictVals)
 
-			for i, v := range vals {
-				s := reflect.ValueOf(&destStructs[i]).Elem()
-				s.Field(fieldIndex).SetFloat(dictVals[v.(int32)].(float64))
+			for i, v:= range vals {
+				floatVal := dictVals[v.(int32)].(float64)
+				// reflect way is slower but safer
+				// may want a hybrid approach if we get to decoding nested structures.
+				//s := reflect.ValueOf(&destStructs[i]).Elem()
+				//s.Field(fieldIndex).SetFloat(floatVal)
+
+				newP := unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[i])) + uintptr(offset))
+				*(*float64)(newP) = floatVal
 			}
 		}
 	}
