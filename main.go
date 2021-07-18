@@ -108,7 +108,7 @@ func parse(data []byte) []Test {
 
 			vals := readDataPage(dataPageHeader, r, dictVals)
 
-			for i, v:= range vals {
+			for i, v := range vals {
 				idx := previousRowGroupsTotalRows + i
 				floatVal := dictVals[v.(int32)].(float64)
 				// reflect way is slower but safer

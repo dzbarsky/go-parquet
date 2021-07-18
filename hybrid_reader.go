@@ -17,7 +17,13 @@ type hybridReader struct {
 
 	rleRemaining uint64
 	rleValue     int32
-	unpacked     []int32
+
+	bitPackedRemaining uint64
+	unpacked           []int32
+
+	// Scratch buffers. These can only be used within a single function call of hybridReader.
+	unpackedScratch [8]int32
+	scratch         []byte
 }
 
 func (hr *hybridReader) Next() (interface{}, error) {
@@ -28,10 +34,15 @@ func (hr *hybridReader) Next() (interface{}, error) {
 	}
 
 	if len(hr.unpacked) > 0 {
-		//fmt.Printf("unpacked: %v\n", hr.unpacked)
-		ret := hr.unpacked[0]
-		hr.unpacked = hr.unpacked[1:]
-		return ret, nil
+		return hr.nextUnpackedValue(), nil
+	}
+
+	if hr.bitPackedRemaining > 0 {
+		err := hr.read8BitPackedValues()
+		if err != nil {
+			return nil, err
+		}
+		return hr.nextUnpackedValue(), nil
 	}
 
 	err := hr.readMore()
@@ -41,6 +52,37 @@ func (hr *hybridReader) Next() (interface{}, error) {
 	return hr.Next()
 }
 
+func (hr *hybridReader) nextUnpackedValue() interface{} {
+	ret := hr.unpacked[0]
+	hr.unpacked = hr.unpacked[1:]
+	return ret
+}
+
+func (hr *hybridReader) read8BitPackedValues() error {
+	if cap(hr.scratch) < hr.bitWidth {
+		hr.scratch = make([]byte, hr.bitWidth)
+	}
+
+	_, err := hr.r.Read(hr.scratch)
+	if err != nil {
+		return err
+	}
+
+	switch hr.bitWidth {
+	case 3:
+		hr.unpackedScratch = unpack8int32_3(hr.scratch)
+	case 4:
+		hr.unpackedScratch = unpack8int32_4(hr.scratch)
+	case 14:
+		hr.unpackedScratch = unpack8int32_14(hr.scratch)
+	default:
+		panic(fmt.Sprintf("Unhandled bitwidth %v", hr.bitWidth))
+	}
+	hr.unpacked = hr.unpackedScratch[:]
+	hr.bitPackedRemaining -= 1
+	return nil
+}
+
 func (hr *hybridReader) readMore() error {
 	header, err := binary.ReadUvarint(hr.r)
 	if err == io.EOF {
@@ -48,29 +90,8 @@ func (hr *hybridReader) readMore() error {
 	}
 	//fmt.Println("head", header)
 	if (header & 1) != 0 {
-		bitPackedRunLen := (header >> 1)
-
-		hr.unpacked = nil
-		for i := uint64(0); i < bitPackedRunLen; i++ {
-			scratch := make([]byte, hr.bitWidth)
-			_, err = hr.r.Read(scratch)
-			if err != nil {
-				return err
-			}
-
-			var unpacked [8]int32
-			switch hr.bitWidth {
-			case 3:
-				unpacked = unpack8int32_3(scratch)
-			case 4:
-				unpacked = unpack8int32_4(scratch)
-			case 14:
-				unpacked = unpack8int32_14(scratch)
-			default:
-				panic(fmt.Sprintf("Unhandled bitwidth %v", hr.bitWidth))
-			}
-			hr.unpacked = append(hr.unpacked, unpacked[:]...)
-		}
+		hr.bitPackedRemaining = (header >> 1)
+		return hr.read8BitPackedValues()
 	} else {
 		hr.rleRemaining = header >> 1
 		buf := make([]byte, (hr.bitWidth+7)/8)
