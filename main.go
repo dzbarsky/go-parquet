@@ -20,7 +20,8 @@ import (
 
 type Test struct {
 	Test float64 `parquet:"test"`
-	//TestInt int64 `parquet:"test_int"`
+	TestFloat float64 `parquet:"test_float"`
+	TestInt int64 `parquet:"test_int"`
 	TestBytes []byte `parquet:"test_str"`
 }
 
