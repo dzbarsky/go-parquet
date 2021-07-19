@@ -39,7 +39,6 @@ func TestFloat(t *testing.T) {
 }
 
 func TestInt(t *testing.T) {
-	t.Skip("Unsupported")
 	data, err := os.ReadFile("testdata/tiny_int.parquet")
 	if err != nil {
 		t.Fatal(err)

@@ -15,6 +15,8 @@ import (
 	"parquet/bytearray"
 	"parquet/double"
 	"parquet/float"
+	"parquet/int_32"
+	"parquet/int_64"
 	"parquet/parquet"
 )
 
@@ -132,6 +134,10 @@ func parse(data []byte) []Test {
 					*(*float64)(newP) = dictVals[v].(float64)
 				case parquet.Type_BYTE_ARRAY:
 					*(*[]byte)(newP) = dictVals[v].([]byte)
+				case parquet.Type_INT32:
+					*(*int32)(newP) = dictVals[v].(int32)
+				case parquet.Type_INT64:
+					*(*int64)(newP) = dictVals[v].(int64)
 				default:
 					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
@@ -169,6 +175,18 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 			vals[i] = dr.Next()
 		}
 		must(dr.Error())
+	case parquet.Type_INT32:
+		ir := int_32.NewReader(r)
+		for i := range vals {
+			vals[i] = ir.Next()
+		}
+		must(ir.Error())
+	case parquet.Type_INT64:
+		ir := int_64.NewReader(r)
+		for i := range vals {
+			vals[i] = ir.Next()
+		}
+		must(ir.Error())
 	case parquet.Type_BYTE_ARRAY:
 		bar := bytearray.NewReader(&byteReader{r})
 		for i := range vals {
