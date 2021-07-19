@@ -44,7 +44,7 @@ func main() {
 	data, err := io.ReadAll(f)
 	must(err)
 
-	fmt.Println(parse(data))
+	fmt.Println(parse(data)[:3])
 }
 
 func parse(data []byte) []Test {
@@ -93,7 +93,7 @@ func parse(data []byte) []Test {
 			addr2 := s.Field(fieldIndex).UnsafeAddr()
 			offset := addr2 - addr
 
-			var dictVals []interface{}
+			var dictVals interface{}
 			//fmt.Println(col.MetaData)
 			dictOffset := col.MetaData.DictionaryPageOffset
 			if dictOffset != nil {
@@ -114,33 +114,50 @@ func parse(data []byte) []Test {
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-			vals := readDataPage(dataPageHeader, r, dictVals)
+			vals := readDataPage(dataPageHeader, r)
+
+			fieldPointer := func(idx int) unsafe.Pointer  {
+				rowIdx := previousRowGroupsTotalRows + idx
+				return unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[rowIdx])) + uintptr(offset))
+			}
 
 			//fmt.Println(vals)
 			//fmt.Println(dictVals)
-			for i, v := range vals {
-				idx := previousRowGroupsTotalRows + i
-				// reflect way is slower but safer
-				// may want a hybrid approach if we get to decoding nested structures.
-				//s := reflect.ValueOf(&destStructs[idx]).Elem()
-				//floatVal := dictVals[v].(float64)
-				//s.Field(fieldIndex).SetFloat(floatVal)
 
-				newP := unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[idx])) + uintptr(offset))
-				switch col.MetaData.Type {
-				case parquet.Type_FLOAT:
-					*(*float32)(newP) = dictVals[v].(float32)
-				case parquet.Type_DOUBLE:
-					*(*float64)(newP) = dictVals[v].(float64)
-				case parquet.Type_BYTE_ARRAY:
-					*(*[]byte)(newP) = dictVals[v].([]byte)
-				case parquet.Type_INT32:
-					*(*int32)(newP) = dictVals[v].(int32)
-				case parquet.Type_INT64:
-					*(*int64)(newP) = dictVals[v].(int64)
-				default:
-					panic("Cannot read type: " + col.MetaData.Type.String())
+			// reflect way is slower but safer
+			// may want a hybrid approach if we get to decoding nested structures.
+			//s := reflect.ValueOf(&destStructs[idx]).Elem()
+			//floatVal := dictVals[v].(float64)
+			//s.Field(fieldIndex).SetFloat(floatVal)
+
+			switch col.MetaData.Type {
+			case parquet.Type_FLOAT:
+				values := dictVals.([]float32)
+				for i, v := range vals {
+					*(*float32)(fieldPointer(i)) = values[v]
 				}
+			case parquet.Type_DOUBLE:
+				values := dictVals.([]float64)
+				for i, v := range vals {
+					*(*float64)(fieldPointer(i)) = values[v]
+				}
+			case parquet.Type_BYTE_ARRAY:
+				values := dictVals.([][]byte)
+				for i, v := range vals {
+					*(*[]byte)(fieldPointer(i)) = values[v]
+				}
+			case parquet.Type_INT32:
+				values := dictVals.([]int32)
+				for i, v := range vals {
+					*(*int32)(fieldPointer(i)) = values[v]
+				}
+			case parquet.Type_INT64:
+				values := dictVals.([]int64)
+				for i, v := range vals {
+					*(*int64)(fieldPointer(i)) = values[v]
+				}
+			default:
+				panic("Cannot read type: " + col.MetaData.Type.String())
 			}
 		}
 		previousRowGroupsTotalRows += int(rowGroup.NumRows)
@@ -155,58 +172,71 @@ func readPageHeader(ctx context.Context, r io.Reader) (*parquet.PageHeader, erro
 	return pageHeader, err
 }
 
-func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) []interface{} {
+func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) interface{} {
 	if header.Type != parquet.PageType_DICTIONARY_PAGE {
 		panic("wrong page type")
 	}
 
-	vals := make([]interface{}, header.DictionaryPageHeader.NumValues)
+	num := header.DictionaryPageHeader.NumValues
 
 	switch col.Type {
 	case parquet.Type_FLOAT:
+		vals := make([]float32, num)
 		fr := float.NewReader(r)
 		for i := range vals {
 			vals[i] = fr.Next()
 		}
 		must(fr.Error())
+		return vals
 	case parquet.Type_DOUBLE:
+		vals := make([]float64, num)
 		dr := double.NewReader(r)
 		for i := range vals {
 			vals[i] = dr.Next()
 		}
 		must(dr.Error())
+		return vals
 	case parquet.Type_INT32:
+		vals := make([]int32, num)
 		ir := int_32.NewReader(r)
 		for i := range vals {
 			vals[i] = ir.Next()
 		}
 		must(ir.Error())
+		return vals
 	case parquet.Type_INT64:
+		vals := make([]int64, num)
 		ir := int_64.NewReader(r)
 		for i := range vals {
 			vals[i] = ir.Next()
 		}
 		must(ir.Error())
+		return vals
 	case parquet.Type_BYTE_ARRAY:
+		vals := make([][]byte, num)
 		bar := bytearray.NewReader(&byteReader{r})
 		for i := range vals {
 			vals[i] = bar.Next()
 		}
 		must(bar.Error())
+		return vals
 	default:
 		panic("Cannot read type: " + col.Type.String())
 	}
-	return vals
 }
 
-func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) []int32 {
+func readDataPage(header *parquet.PageHeader, r reader) []int32 {
 	//fmt.Println(header)
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
 	}
-	if header.DataPageHeader.Encoding != parquet.Encoding_PLAIN_DICTIONARY {
-		panic("wrong encoding")
+
+	switch header.DataPageHeader.Encoding {
+	case parquet.Encoding_PLAIN_DICTIONARY, parquet.Encoding_PLAIN:
+	default:
+		panic("wrong encoding: " + header.DataPageHeader.Encoding.String())
 	}
+
 	vals := make([]int32, 0, header.DataPageHeader.NumValues)
 	//fmt.Println(header)
 

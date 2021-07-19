@@ -19,6 +19,7 @@ func BenchmarkParseRepeated(b *testing.B) {
 // BenchmarkParseRandom-16      	    1749	    674274 ns/op	  673538 B/op	   21254 allocs/op
 // BenchmarkParseRandom-16    	    1939	    590756 ns/op	  572529 B/op	   19867 allocs/op
 // BenchmarkParseRandom-16    	    2505	    422289 ns/op	  410669 B/op	   10123 allocs/op
+// BenchmarkParseRandom-16    	    3106	    346842 ns/op	  650234 B/op	     126 allocs/op
 func BenchmarkParseRandom(b *testing.B) {
 	benchmarkParse(b, "random.parquet")
 }
