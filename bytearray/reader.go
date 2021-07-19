@@ -26,6 +26,7 @@ func (r* Reader) Next() []byte {
 	}
 
 	data := r.buf[:]
+	// TODO: io.ReadFull would be safer
 	_, r.err = r.r.Read(data)
 	if r.err != nil {
 		return nil

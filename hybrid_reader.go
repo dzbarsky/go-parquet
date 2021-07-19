@@ -63,6 +63,7 @@ func (hr *hybridReader) read8BitPackedValues() error {
 		hr.scratch = make([]byte, hr.bitWidth)
 	}
 
+	// TODO: io.ReadFull would be safer
 	_, err := hr.r.Read(hr.scratch)
 	if err != nil {
 		return err
@@ -95,6 +96,7 @@ func (hr *hybridReader) readMore() error {
 	} else {
 		hr.rleRemaining = header >> 1
 		buf := make([]byte, (hr.bitWidth+7)/8)
+		// TODO: io.ReadFull would be safer
 		_, err = hr.r.Read(buf)
 		if err != nil {
 			return err

@@ -56,7 +56,7 @@ func parse(data []byte) []Test {
 	_, err := r.Seek(-8, io.SeekEnd)
 	must(err)
 	sizeBuf := make([]byte, 4)
-	_, err = r.Read(sizeBuf)
+	_, err = io.ReadFull(r, sizeBuf)
 	must(err)
 	size := binary.LittleEndian.Uint32(sizeBuf)
 
@@ -221,7 +221,7 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	}
 
 	buf := make([]byte, 1)
-	_, err = r.Read(buf)
+	_, err = io.ReadFull(r, buf)
 	must(err)
 	bitWidth := int(buf[0])
 
@@ -244,6 +244,7 @@ type byteReader struct {
 
 func (b *byteReader) ReadByte() (byte, error) {
 	buf := make([]byte, 1)
+	// TODO: io.ReadFull would be safer
 	_, err := b.Reader.Read(buf)
 	return buf[0], err
 }

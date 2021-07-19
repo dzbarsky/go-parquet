@@ -21,6 +21,7 @@ func (r* Reader) Next() float64 {
 		return 0
 	}
 	data := r.buf[:]
+	// TODO: io.ReadFull would be safer
 	_, r.err = r.r.Read(data)
 	return math.Float64frombits(binary.LittleEndian.Uint64(data))
 }
