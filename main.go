@@ -21,7 +21,7 @@ import (
 type Test struct {
 	Test float64 `parquet:"test"`
 	//TestInt int64 `parquet:"test_int"`
-	TestString []byte `parquet:"test_str"`
+	TestBytes []byte `parquet:"test_str"`
 }
 
 func must(err error) {
