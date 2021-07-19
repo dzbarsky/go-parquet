@@ -226,11 +226,8 @@ func readDataPage(header *parquet.PageHeader, r reader, dictVals []interface{}) 
 	bitWidth := int(buf[0])
 
 	hr = &hybridReader{r: r, bitWidth: bitWidth}
-	for {
+	for i := int32(0); i < header.DataPageHeader.NumValues; i++ {
 		val, err := hr.Next()
-		if err == io.EOF {
-			break
-		}
 		must(err)
 		vals = append(vals, val)
 	}
