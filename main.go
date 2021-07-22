@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/golang/snappy"
 
 	"parquet/bytearray"
 	"parquet/double"
@@ -114,7 +115,7 @@ func parse(data []byte) []Test {
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-			vals := readDataPage(dataPageHeader, r)
+			vals := readDataPage(col.MetaData, dataPageHeader, r)
 
 			fieldPointer := func(idx int) unsafe.Pointer  {
 				rowIdx := previousRowGroupsTotalRows + idx
@@ -172,10 +173,30 @@ func readPageHeader(ctx context.Context, r io.Reader) (*parquet.PageHeader, erro
 	return pageHeader, err
 }
 
+func wrapReader(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) io.Reader {
+	switch col.Codec {
+	case parquet.CompressionCodec_UNCOMPRESSED:
+		return r
+	case parquet.CompressionCodec_SNAPPY:
+		data := make([]byte, header.CompressedPageSize)
+		_, err := io.ReadFull(r, data)
+		must(err)
+		decompressed := make([]byte, header.UncompressedPageSize)
+		decompressed, err = snappy.Decode(decompressed, data)
+		must(err)
+
+		return bytes.NewReader(decompressed)
+	default:
+		panic("Unsupported compression: " + col.Codec.String())
+	}
+}
+
 func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) interface{} {
 	if header.Type != parquet.PageType_DICTIONARY_PAGE {
 		panic("wrong page type")
 	}
+
+	r = wrapReader(col, header, r)
 
 	num := header.DictionaryPageHeader.NumValues
 
@@ -225,11 +246,12 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 	}
 }
 
-func readDataPage(header *parquet.PageHeader, r reader) []int32 {
-	//fmt.Println(header)
+func readDataPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r reader) []int32 {
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
 	}
+
+	r = &byteReader{wrapReader(col, header, r)}
 
 	switch header.DataPageHeader.Encoding {
 	case parquet.Encoding_PLAIN_DICTIONARY, parquet.Encoding_PLAIN:

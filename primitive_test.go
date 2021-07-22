@@ -39,17 +39,21 @@ func TestFloat(t *testing.T) {
 }
 
 func TestInt(t *testing.T) {
-	data, err := os.ReadFile("testdata/tiny_int.parquet")
-	if err != nil {
-		t.Fatal(err)
-	}
-	structs := parse(data)
-	if len(structs) != 10 {
-		t.Fatal("Wrong length")
-	}
-	for i, s := range structs {
-		if s.TestInt != int64(i) {
-			t.Fatalf("Wrong at %d", i)
-		}
+	for _, f := range []string {"testdata/tiny_int.parquet", "testdata/tiny_int.snappy.parquet"} {
+		t.Run(f, func (t *testing.T) {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			structs := parse(data)
+			if len(structs) != 10 {
+				t.Fatal("Wrong length")
+			}
+			for i, s := range structs {
+				if s.TestInt != int64(i) {
+					t.Fatalf("Wrong at %d", i)
+				}
+			}
+		})
 	}
 }
