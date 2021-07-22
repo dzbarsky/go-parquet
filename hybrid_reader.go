@@ -70,6 +70,8 @@ func (hr *hybridReader) read8BitPackedValues() error {
 	}
 
 	switch hr.bitWidth {
+	case 1:
+		hr.unpackedScratch = unpack8int32_1(hr.scratch)
 	case 3:
 		hr.unpackedScratch = unpack8int32_3(hr.scratch)
 	case 4:
@@ -107,6 +109,19 @@ func (hr *hybridReader) readMore() error {
 		hr.rleValue = int32(buf[0])
 	}
 	return nil
+}
+
+func unpack8int32_1(data []byte) (out [8]int32) {
+	_ = data[0]
+	out[0] = int32(uint32((data[0]>>0)&1) << 0)
+	out[1] = int32(uint32((data[0]>>1)&1) << 0)
+	out[2] = int32(uint32((data[0]>>2)&1) << 0)
+	out[3] = int32(uint32((data[0]>>3)&1) << 0)
+	out[4] = int32(uint32((data[0]>>4)&1) << 0)
+	out[5] = int32(uint32((data[0]>>5)&1) << 0)
+	out[6] = int32(uint32((data[0]>>6)&1) << 0)
+	out[7] = int32(uint32((data[0]>>7)&1) << 0)
+	return
 }
 
 func unpack8int32_3(data []byte) (out [8]int32) {

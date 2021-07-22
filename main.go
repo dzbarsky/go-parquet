@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"io"
 	"os"
 	"reflect"
@@ -115,7 +116,9 @@ func parse(data []byte) []Test {
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-			vals := readDataPage(col.MetaData, dataPageHeader, r)
+			defs, vals := readDataPage(col.MetaData, dataPageHeader, r)
+			//fmt.Println(col.MetaData)
+			//fmt.Println(dataPageHeader)
 
 			fieldPointer := func(idx int) unsafe.Pointer  {
 				rowIdx := previousRowGroupsTotalRows + idx
@@ -131,16 +134,26 @@ func parse(data []byte) []Test {
 			//floatVal := dictVals[v].(float64)
 			//s.Field(fieldIndex).SetFloat(floatVal)
 
+			// TODO: reading nullable values into a non-nullable field results in a 0-value
+			// We make an exception for floats because pandas encodes NaN as null.
 			switch col.MetaData.Type {
 			case parquet.Type_FLOAT:
 				values := dictVals.([]float32)
 				for i, v := range vals {
-					*(*float32)(fieldPointer(i)) = values[v]
+					if defs[i] == 0 {
+						*(*float32)(fieldPointer(i)) = float32(math.NaN())
+					} else {
+						*(*float32)(fieldPointer(i)) = values[v]
+					}
 				}
 			case parquet.Type_DOUBLE:
 				values := dictVals.([]float64)
 				for i, v := range vals {
-					*(*float64)(fieldPointer(i)) = values[v]
+					if defs[i] == 0 {
+						*(*float64)(fieldPointer(i)) = math.NaN()
+					} else {
+						*(*float64)(fieldPointer(i)) = values[v]
+					}
 				}
 			case parquet.Type_BYTE_ARRAY:
 				values := dictVals.([][]byte)
@@ -246,7 +259,12 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 	}
 }
 
-func readDataPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r reader) []int32 {
+// readDataPage returns definition levels and values
+func readDataPage(
+	col *parquet.ColumnMetaData,
+	header *parquet.PageHeader,
+	r reader,
+) ([]int32, []int32) {
 	if header.Type != parquet.PageType_DATA_PAGE {
 		panic("wrong page type")
 	}
@@ -259,7 +277,7 @@ func readDataPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r rea
 		panic("wrong encoding: " + header.DataPageHeader.Encoding.String())
 	}
 
-	vals := make([]int32, 0, header.DataPageHeader.NumValues)
+	defs := make([]int32, 0, header.DataPageHeader.NumValues)
 	//fmt.Println(header)
 
 	buf2 := make([]byte, header.UncompressedPageSize)
@@ -282,10 +300,11 @@ func readDataPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r rea
 	}
 
 	for {
-		_, err := hr.Next()
+		v, err := hr.Next()
 		if err == io.EOF {
 			break
 		}
+		defs = append(defs, v)
 		if err != nil {
 			panic(err)
 		}
@@ -296,14 +315,18 @@ func readDataPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r rea
 	must(err)
 	bitWidth := int(buf[0])
 
+	vals := make([]int32, header.DataPageHeader.NumValues)
 	hr = &hybridReader{r: r, bitWidth: bitWidth}
-	for i := int32(0); i < header.DataPageHeader.NumValues; i++ {
+	for i, defined := range defs {
+		if defined == 0 {
+			continue
+		}
 		val, err := hr.Next()
 		must(err)
-		vals = append(vals, val)
+		vals[i] = val
 	}
 
-	return vals
+	return defs, vals
 }
 
 type byteReader struct {

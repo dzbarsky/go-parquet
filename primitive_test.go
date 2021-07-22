@@ -2,12 +2,13 @@ package main
 
 import (
 	"os"
+	"math"
 	"testing"
 	"strconv"
 )
 
 func TestByteArray(t *testing.T) {
-	data, err := os.ReadFile("testdata/tiny_byte_array.parquet")
+	data, err := os.ReadFile("testdata/pandas/tiny_byte_array.parquet")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +24,7 @@ func TestByteArray(t *testing.T) {
 }
 
 func TestFloat(t *testing.T) {
-	data, err := os.ReadFile("testdata/tiny_float.parquet")
+	data, err := os.ReadFile("testdata/pandas/tiny_float.parquet")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +39,33 @@ func TestFloat(t *testing.T) {
 	}
 }
 
+func f64Equal(f1, f2 float64) bool {
+	if f1 == f2 {
+		return true
+	}
+	return math.IsNaN(f1) && math.IsNaN(f2)
+}
+
+func TestFloatWithNaN(t *testing.T) {
+	data, err := os.ReadFile("testdata/pandas/float_with_nan.parquet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	structs := parse(data)
+	if len(structs) != 4 {
+		t.Fatal("Wrong length")
+	}
+	expected := []float64{1, math.NaN(), 2, math.NaN()}
+	for i, s := range structs {
+		if !f64Equal(s.TestFloat, expected[i]) {
+			t.Fatalf("Wrong at %d, wanted %v, got %v", i, expected[i], s.TestFloat)
+		}
+	}
+}
+
+
 func TestInt(t *testing.T) {
-	for _, f := range []string {"testdata/tiny_int.parquet", "testdata/tiny_int.snappy.parquet"} {
+	for _, f := range []string {"testdata/pandas/tiny_int.parquet", "testdata/pandas/tiny_int.snappy.parquet"} {
 		t.Run(f, func (t *testing.T) {
 			data, err := os.ReadFile(f)
 			if err != nil {
