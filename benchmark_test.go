@@ -24,6 +24,10 @@ func BenchmarkParseRandom(b *testing.B) {
 	benchmarkParse(b, "scratch/random.parquet")
 }
 
+func BenchmarkParseAttributes(b *testing.B) {
+	benchmarkParse(b, "scratch/attributes.parquet")
+}
+
 func benchmarkParse(b *testing.B, filename string) {
 	data, err := os.ReadFile(filename)
 	if err != nil {

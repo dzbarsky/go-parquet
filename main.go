@@ -47,7 +47,7 @@ func main() {
 	data, err := io.ReadAll(f)
 	must(err)
 
-	fmt.Println(parse(data)[:3])
+	fmt.Println(parse(data)[:5])
 }
 
 func parse(data []byte) []Test {
@@ -73,6 +73,12 @@ func parse(data []byte) []Test {
 	fileMD := parquet.NewFileMetaData()
 	err = fileMD.Read(ctx, footerReader)
 	must(err)
+
+	reps := map[string]parquet.FieldRepetitionType{}
+	for _, s := range fileMD.Schema {
+		reps[s.Name] = *s.RepetitionType
+	}
+
 	destStructs := make([]Test, fileMD.NumRows)
 	previousRowGroupsTotalRows := 0
 	for _, rowGroup := range fileMD.RowGroups {
@@ -87,7 +93,7 @@ func parse(data []byte) []Test {
 				}
 			}
 			if fieldIndex == -1 {
-				fmt.Printf("Ignoring column %s\n", col.MetaData.PathInSchema[0])
+				//fmt.Printf("Ignoring column %s\n", col.MetaData.PathInSchema[0])
 				continue
 				// panic("field not found")
 			}
@@ -117,7 +123,9 @@ func parse(data []byte) []Test {
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-			defs, vals := readDataPage(col.MetaData, dataPageHeader, r)
+	
+			//fmt.Println(col)
+			defs, vals := readDataPage(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, r)
 			//fmt.Println(col.MetaData)
 			//fmt.Println(dataPageHeader)
 
@@ -265,6 +273,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 // readDataPage returns definition levels and values
 func readDataPage(
 	col *parquet.ColumnMetaData,
+	repType parquet.FieldRepetitionType,
 	header *parquet.PageHeader,
 	r reader,
 ) ([]int32, []int32) {
@@ -280,8 +289,6 @@ func readDataPage(
 		panic("wrong encoding: " + header.DataPageHeader.Encoding.String())
 	}
 
-	defs := make([]int32, 0, header.DataPageHeader.NumValues)
-	//fmt.Println(header)
 
 	buf2 := make([]byte, header.UncompressedPageSize)
 	_, err2 := io.ReadFull(r, buf2)
@@ -289,47 +296,68 @@ func readDataPage(
 	//fmt.Println(buf2)
 	r = bytes.NewReader(buf2)
 
-	var size uint32
-	err := binary.Read(r, binary.LittleEndian, &size)
-	must(err)
-	//fmt.Println("size: ", size)
-
-	// TODO: This might be repition level actually
-	// TODO: Figure out where to compute max def level
-	// TODO: need these to handle nullability correctly?
-	hr := &hybridReader{
-		r:        &byteReader{io.LimitReader(r, int64(size))},
-		bitWidth: 1, // max definition level = 1
-	}
-
-	for {
-		v, err := hr.Next()
-		if err == io.EOF {
-			break
-		}
-		defs = append(defs, v)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	buf := make([]byte, 1)
-	_, err = io.ReadFull(r, buf)
-	must(err)
-	bitWidth := int(buf[0])
-
-	vals := make([]int32, header.DataPageHeader.NumValues)
-	hr = &hybridReader{r: r, bitWidth: bitWidth}
-	for i, defined := range defs {
-		if defined == 0 {
-			continue
-		}
-		val, err := hr.Next()
+	switch repType {
+	case parquet.FieldRepetitionType_REQUIRED:
+		buf := make([]byte, 1)
+		_, err := io.ReadFull(r, buf)
 		must(err)
-		vals[i] = val
-	}
+		bitWidth := int(buf[0])
 
-	return defs, vals
+		vals := make([]int32, header.DataPageHeader.NumValues)
+		hr := &hybridReader{r: r, bitWidth: bitWidth}
+		for i := range vals {
+			val, err := hr.Next()
+			must(err)
+			vals[i] = val
+		}
+		return nil, vals
+	case parquet.FieldRepetitionType_OPTIONAL:
+		defs := make([]int32, 0, header.DataPageHeader.NumValues)
+		//fmt.Println(header)
+		var size uint32
+		err := binary.Read(r, binary.LittleEndian, &size)
+		must(err)
+		//fmt.Println("size: ", size)
+
+		// TODO: This might be repition level actually
+		// TODO: Figure out where to compute max def level
+		// TODO: need these to handle nullability correctly?
+		hr := &hybridReader{
+			r:        &byteReader{io.LimitReader(r, int64(size))},
+			bitWidth: 1, // max definition level = 1
+		}
+
+		for {
+			v, err := hr.Next()
+			if err == io.EOF {
+				break
+			}
+			defs = append(defs, v)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		buf := make([]byte, 1)
+		_, err = io.ReadFull(r, buf)
+		must(err)
+		bitWidth := int(buf[0])
+
+		vals := make([]int32, header.DataPageHeader.NumValues)
+		hr = &hybridReader{r: r, bitWidth: bitWidth}
+		for i, defined := range defs {
+			if defined == 0 {
+				continue
+			}
+			val, err := hr.Next()
+			must(err)
+			vals[i] = val
+		}
+
+		return defs, vals
+	default:
+		panic("Unsupported")
+	}
 }
 
 type byteReader struct {
