@@ -53,7 +53,7 @@ func floatValues(n int) []floatHolder {
 
 var data []byte
 
-// BenchmarkFloatWriterPlain-16    	    1030	   1131445 ns/op	 1530206 B/op	     106 allocs/op
+// BenchmarkFloatWriterPlain-16    	    1086	   1009302 ns/op	  804784 B/op	      93 allocs/op
 func BenchmarkFloatWriterPlain(b *testing.B) {
 	values := floatValues(100000)
 	b.ResetTimer()

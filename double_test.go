@@ -51,7 +51,7 @@ func doubleValues(n int) []doubleHolder {
 	return values
 }
 
-// BenchmarkDoubleWriterPlain-16    	     846	   1328698 ns/op	 3168612 B/op	     107 allocs/op
+// BenchmarkDoubleWriterPlain-16    	     952	   1132817 ns/op	 1607599 B/op	      93 allocs/op
 func BenchmarkDoubleWriterPlain(b *testing.B) {
 	values := doubleValues(100000)
 	b.ResetTimer()

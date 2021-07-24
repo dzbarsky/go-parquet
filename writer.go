@@ -71,6 +71,7 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 		kind := f.Type.Kind()
 		switch kind {
 		case reflect.Float32:
+			buf.Grow(4 * nStructs)
 			fw := float.NewWriter(buf)
 			for j := 0; j < nStructs; j++ {
 				val := *(*float32)(fieldPointer(j))
@@ -78,6 +79,7 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 				must(err)
 			}
 		case reflect.Float64:
+			buf.Grow(8 * nStructs)
 			dw := double.NewWriter(buf)
 			for j := 0; j < nStructs; j++ {
 				val := *(*float64)(fieldPointer(j))
