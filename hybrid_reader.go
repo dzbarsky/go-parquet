@@ -72,12 +72,34 @@ func (hr *hybridReader) read8BitPackedValues() error {
 	switch hr.bitWidth {
 	case 1:
 		hr.unpackedScratch = unpack8int32_1(hr.scratch)
+	case 2:
+		hr.unpackedScratch = unpack8int32_2(hr.scratch)
 	case 3:
 		hr.unpackedScratch = unpack8int32_3(hr.scratch)
 	case 4:
 		hr.unpackedScratch = unpack8int32_4(hr.scratch)
+	case 5:
+		hr.unpackedScratch = unpack8int32_5(hr.scratch)
+	case 6:
+		hr.unpackedScratch = unpack8int32_6(hr.scratch)
+	case 7:
+		hr.unpackedScratch = unpack8int32_7(hr.scratch)
+	case 8:
+		hr.unpackedScratch = unpack8int32_8(hr.scratch)
+	case 9:
+		hr.unpackedScratch = unpack8int32_9(hr.scratch)
+	case 10:
+		hr.unpackedScratch = unpack8int32_10(hr.scratch)
+	case 11:
+		hr.unpackedScratch = unpack8int32_11(hr.scratch)
+	case 12:
+		hr.unpackedScratch = unpack8int32_12(hr.scratch)
+	case 13:
+		hr.unpackedScratch = unpack8int32_13(hr.scratch)
 	case 14:
 		hr.unpackedScratch = unpack8int32_14(hr.scratch)
+	case 15:
+		hr.unpackedScratch = unpack8int32_15(hr.scratch)
 	default:
 		panic(fmt.Sprintf("Unhandled bitwidth %v", hr.bitWidth))
 	}
@@ -103,59 +125,18 @@ func (hr *hybridReader) readMore() error {
 		if err != nil {
 			return err
 		}
-		if len(buf) != 1 {
-			panic("need to read bigger ints")
+		switch len(buf) {
+		case 1:
+			hr.rleValue = int32(buf[0])
+		case 2:
+			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8
+		case 3:
+			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8 + int32(buf[2]) << 16
+		case 4:
+			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8 + int32(buf[2]) << 16 + int32(buf[3]) << 24
+		default:
+			panic("Bad int size")
 		}
-		hr.rleValue = int32(buf[0])
 	}
 	return nil
-}
-
-func unpack8int32_1(data []byte) (out [8]int32) {
-	_ = data[0]
-	out[0] = int32(uint32((data[0]>>0)&1) << 0)
-	out[1] = int32(uint32((data[0]>>1)&1) << 0)
-	out[2] = int32(uint32((data[0]>>2)&1) << 0)
-	out[3] = int32(uint32((data[0]>>3)&1) << 0)
-	out[4] = int32(uint32((data[0]>>4)&1) << 0)
-	out[5] = int32(uint32((data[0]>>5)&1) << 0)
-	out[6] = int32(uint32((data[0]>>6)&1) << 0)
-	out[7] = int32(uint32((data[0]>>7)&1) << 0)
-	return
-}
-
-func unpack8int32_3(data []byte) (out [8]int32) {
-	out[0] = int32(uint32((data[0]>>0)&7) << 0)
-	out[1] = int32(uint32((data[0]>>3)&7) << 0)
-	out[2] = int32(uint32((data[0]>>6)&3)<<0 | uint32((data[1]>>0)&1)<<2)
-	out[3] = int32(uint32((data[1]>>1)&7) << 0)
-	out[4] = int32(uint32((data[1]>>4)&7) << 0)
-	out[5] = int32(uint32((data[1]>>7)&1)<<0 | uint32((data[2]>>0)&3)<<1)
-	out[6] = int32(uint32((data[2]>>2)&7) << 0)
-	out[7] = int32(uint32((data[2]>>5)&7) << 0)
-	return
-}
-
-func unpack8int32_4(data []byte) (out [8]int32) {
-	out[0] = int32(uint32((data[0]>>0)&15) << 0)
-	out[1] = int32(uint32((data[0]>>4)&15) << 0)
-	out[2] = int32(uint32((data[1]>>0)&15) << 0)
-	out[3] = int32(uint32((data[1]>>4)&15) << 0)
-	out[4] = int32(uint32((data[2]>>0)&15) << 0)
-	out[5] = int32(uint32((data[2]>>4)&15) << 0)
-	out[6] = int32(uint32((data[3]>>0)&15) << 0)
-	out[7] = int32(uint32((data[3]>>4)&15) << 0)
-	return
-}
-
-func unpack8int32_14(data []byte) (out [8]int32) {
-	out[0] = int32(uint32((data[0]>>0)&255)<<0 | uint32((data[1]>>0)&63)<<8)
-	out[1] = int32(uint32((data[1]>>6)&3)<<0 | uint32((data[2]>>0)&255)<<2 | uint32((data[3]>>0)&15)<<10)
-	out[2] = int32(uint32((data[3]>>4)&15)<<0 | uint32((data[4]>>0)&255)<<4 | uint32((data[5]>>0)&3)<<12)
-	out[3] = int32(uint32((data[5]>>2)&63)<<0 | uint32((data[6]>>0)&255)<<6)
-	out[4] = int32(uint32((data[7]>>0)&255)<<0 | uint32((data[8]>>0)&63)<<8)
-	out[5] = int32(uint32((data[8]>>6)&3)<<0 | uint32((data[9]>>0)&255)<<2 | uint32((data[10]>>0)&15)<<10)
-	out[6] = int32(uint32((data[10]>>4)&15)<<0 | uint32((data[11]>>0)&255)<<4 | uint32((data[12]>>0)&3)<<12)
-	out[7] = int32(uint32((data[12]>>2)&63)<<0 | uint32((data[13]>>0)&255)<<6)
-	return
 }
