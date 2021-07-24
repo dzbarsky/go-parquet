@@ -2,21 +2,23 @@ package double
 
 import (
 	"encoding/binary"
-	"io"
 	"math"
 )
 
 type Writer struct {
-	w io.Writer
-	buf [8]byte
+	buf []byte
+	index int
 }
 
-func NewWriter(w io.Writer) *Writer {
-	return &Writer{w: w}
+func NewWriter(n int) *Writer {
+	return &Writer{buf: make([]byte, 8*n)}
 }
 
-func (w *Writer) Write(v float64) error {
-	binary.LittleEndian.PutUint64(w.buf[:], math.Float64bits(v))
-	_, err := w.w.Write(w.buf[:])
-	return err
+func (w *Writer) Write(v float64) {
+	binary.LittleEndian.PutUint64(w.buf[w.index:], math.Float64bits(v))
+	w.index += 8
+}
+
+func (w *Writer) Bytes() []byte {
+	return w.buf
 }

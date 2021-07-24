@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"math/rand"
+	"io"
 	"os"
 	"testing"
 )
@@ -51,20 +52,17 @@ func doubleValues(n int) []doubleHolder {
 	return values
 }
 
-// BenchmarkDoubleWriterPlain-16    	     952	   1132817 ns/op	 1607599 B/op	      93 allocs/op
+// BenchmarkDoubleWriterPlain-16    	    2876	    383738 ns/op	  804600 B/op	      88 allocs/op
 func BenchmarkDoubleWriterPlain(b *testing.B) {
 	values := doubleValues(100000)
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		buf := bytes.NewBuffer(nil)
-		err := write(context.Background(), buf, values)
+		err := write(context.Background(), io.Discard, values)
 		if err != nil {
 			b.Fatal(err)
 		}
-
-		data = buf.Bytes()
 	}
 }
 

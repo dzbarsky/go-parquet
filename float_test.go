@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"math/rand"
 	"os"
 	"testing"
@@ -53,20 +54,17 @@ func floatValues(n int) []floatHolder {
 
 var data []byte
 
-// BenchmarkFloatWriterPlain-16    	    1086	   1009302 ns/op	  804784 B/op	      93 allocs/op
+// BenchmarkFloatWriterPlain-16    	    5133	    232429 ns/op	  403187 B/op	      88 allocs/op
 func BenchmarkFloatWriterPlain(b *testing.B) {
 	values := floatValues(100000)
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		buf := bytes.NewBuffer(nil)
-		err := write(context.Background(), buf, values)
+		err := write(context.Background(), io.Discard, values)
 		if err != nil {
 			b.Fatal(err)
 		}
-
-		data = buf.Bytes()
 	}
 }
 

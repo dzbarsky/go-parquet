@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -66,30 +65,25 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 			return unsafe.Pointer(firstAddr + uintptr(idx)*structSize)
 		}
 
-		buf := bytes.NewBuffer(nil)
+		var data [] byte
 
 		kind := f.Type.Kind()
 		switch kind {
 		case reflect.Float32:
-			buf.Grow(4 * nStructs)
-			fw := float.NewWriter(buf)
+			fw := float.NewWriter(nStructs)
 			for j := 0; j < nStructs; j++ {
-				val := *(*float32)(fieldPointer(j))
-				err := fw.Write(val)
-				must(err)
+				fw.Write(*(*float32)(fieldPointer(j)))
 			}
+			data = fw.Bytes()
 		case reflect.Float64:
-			buf.Grow(8 * nStructs)
-			dw := double.NewWriter(buf)
+			dw := double.NewWriter(nStructs)
 			for j := 0; j < nStructs; j++ {
-				val := *(*float64)(fieldPointer(j))
-				err := dw.Write(val)
-				must(err)
+				dw.Write(*(*float64)(fieldPointer(j)))
 			}
+			data = dw.Bytes()
 		default:
 			return errors.New("Unhandled kind " + f.Type.Kind().String())
 		}
-		data := buf.Bytes()
 
 		pageHeader := &parquet.PageHeader{
 			Type:                 parquet.PageType_DATA_PAGE,
@@ -110,7 +104,7 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 			return err
 		}
 
-		_, err = io.Copy(w, buf)
+		_, err = w.Write(data)
 		if err != nil {
 			return err
 		}
