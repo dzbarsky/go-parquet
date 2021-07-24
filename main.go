@@ -5,15 +5,15 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"unsafe"
 
+	"github.com/DataDog/zstd"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/golang/snappy"
-	"github.com/DataDog/zstd"
 
 	"parquet/bytearray"
 	"parquet/double"
@@ -24,10 +24,10 @@ import (
 )
 
 type Test struct {
-	Test float64 `parquet:"test"`
+	Test      float64 `parquet:"test"`
 	TestFloat float64 `parquet:"test_float"`
-	TestInt int64 `parquet:"test_int"`
-	TestBytes []byte `parquet:"test_str"`
+	TestInt   int64   `parquet:"test_int"`
+	TestBytes []byte  `parquet:"test_str"`
 }
 
 func must(err error) {
@@ -52,7 +52,7 @@ func main() {
 func parse(f *File, destStructs interface{}) {
 	ctx := context.TODO()
 	r := f.r
-	
+
 	reps := map[string]parquet.FieldRepetitionType{}
 	for _, s := range f.metadata.Schema {
 		reps[s.Name] = *s.RepetitionType
@@ -100,15 +100,14 @@ func parse(f *File, destStructs interface{}) {
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
-	
 			//fmt.Println(col)
 			defs, vals := readDataPage(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, &byteReader{r})
 			//fmt.Println(col.MetaData)
 			//fmt.Println(dataPageHeader)
 
-			fieldPointer := func(idx int) unsafe.Pointer  {
+			fieldPointer := func(idx int) unsafe.Pointer {
 				rowIdx := uintptr(previousRowGroupsTotalRows + idx)
-				return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + rowIdx * structSize + uintptr(offset))
+				return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + rowIdx*structSize + uintptr(offset))
 			}
 
 			//fmt.Println(vals)
@@ -265,7 +264,6 @@ func readDataPage(
 	default:
 		panic("wrong encoding: " + header.DataPageHeader.Encoding.String())
 	}
-
 
 	buf2 := make([]byte, header.UncompressedPageSize)
 	_, err2 := io.ReadFull(r, buf2)

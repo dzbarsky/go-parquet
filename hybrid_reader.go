@@ -129,11 +129,11 @@ func (hr *hybridReader) readMore() error {
 		case 1:
 			hr.rleValue = int32(buf[0])
 		case 2:
-			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8
+			hr.rleValue = int32(buf[0]) + int32(buf[1])<<8
 		case 3:
-			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8 + int32(buf[2]) << 16
+			hr.rleValue = int32(buf[0]) + int32(buf[1])<<8 + int32(buf[2])<<16
 		case 4:
-			hr.rleValue = int32(buf[0]) + int32(buf[1]) << 8 + int32(buf[2]) << 16 + int32(buf[3]) << 24
+			hr.rleValue = int32(buf[0]) + int32(buf[1])<<8 + int32(buf[2])<<16 + int32(buf[3])<<24
 		default:
 			panic("Bad int size")
 		}

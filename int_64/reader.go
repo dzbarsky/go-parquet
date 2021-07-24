@@ -1,12 +1,12 @@
 package int_64
 
 import (
-	"io"
 	"encoding/binary"
+	"io"
 )
 
-type Reader struct{
-	r io.Reader
+type Reader struct {
+	r   io.Reader
 	err error
 	buf [8]byte
 }
@@ -15,7 +15,7 @@ func NewReader(r io.Reader) *Reader {
 	return &Reader{r: r}
 }
 
-func (r* Reader) Next() int64 {
+func (r *Reader) Next() int64 {
 	if r.err != nil {
 		return 0
 	}
@@ -25,6 +25,6 @@ func (r* Reader) Next() int64 {
 	return int64(binary.LittleEndian.Uint64(data))
 }
 
-func (r* Reader) Error() error {
+func (r *Reader) Error() error {
 	return r.err
 }

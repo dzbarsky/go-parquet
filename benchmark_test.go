@@ -6,10 +6,10 @@ import (
 )
 
 type s struct {
-	Test float64 `parquet:"test"`
+	Test      float64 `parquet:"test"`
 	TestFloat float64 `parquet:"test_float"`
-	TestInt int64 `parquet:"test_int"`
-	TestBytes []byte `parquet:"test_str"`
+	TestInt   int64   `parquet:"test_int"`
+	TestBytes []byte  `parquet:"test_str"`
 }
 
 // BenchmarkParseRepeated-16    	    1096	    968192 ns/op	  828591 B/op	     133 allocs/op

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
 	"math"
-	"testing"
+	"os"
 	"strconv"
+	"testing"
 )
 
 func TestByteArray(t *testing.T) {
@@ -75,10 +75,9 @@ func TestFloatWithNaN(t *testing.T) {
 	}
 }
 
-
 func TestInt(t *testing.T) {
-	for _, f := range []string {"testdata/pandas/tiny_int.parquet", "testdata/pandas/tiny_int.snappy.parquet"} {
-		t.Run(f, func (t *testing.T) {
+	for _, f := range []string{"testdata/pandas/tiny_int.parquet", "testdata/pandas/tiny_int.snappy.parquet"} {
+		t.Run(f, func(t *testing.T) {
 			data, err := os.ReadFile(f)
 			if err != nil {
 				t.Fatal(err)

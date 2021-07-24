@@ -1,8 +1,8 @@
 package bytearray
 
 import (
-	"io"
 	"encoding/binary"
+	"io"
 )
 
 type reader interface {
@@ -10,8 +10,8 @@ type reader interface {
 	io.ByteReader
 }
 
-type Reader struct{
-	r reader
+type Reader struct {
+	r   reader
 	err error
 	buf [4]byte
 }
@@ -20,7 +20,7 @@ func NewReader(r reader) *Reader {
 	return &Reader{r: r}
 }
 
-func (r* Reader) Next() []byte {
+func (r *Reader) Next() []byte {
 	if r.err != nil {
 		return nil
 	}
@@ -39,6 +39,6 @@ func (r* Reader) Next() []byte {
 	return data
 }
 
-func (r* Reader) Error() error {
+func (r *Reader) Error() error {
 	return r.err
 }

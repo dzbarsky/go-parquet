@@ -1,10 +1,10 @@
 package main
 
 import (
-	"io"
+	"bytes"
 	"context"
 	"encoding/binary"
-	"bytes"
+	"io"
 
 	"github.com/apache/thrift/lib/go/thrift"
 
@@ -16,7 +16,7 @@ func isMagic(d []byte) bool {
 }
 
 type File struct {
-	r io.ReadSeeker
+	r        io.ReadSeeker
 	metadata *parquet.FileMetaData
 }
 

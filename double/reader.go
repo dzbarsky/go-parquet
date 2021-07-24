@@ -1,13 +1,13 @@
 package double
 
 import (
+	"encoding/binary"
 	"io"
 	"math"
-	"encoding/binary"
 )
 
-type Reader struct{
-	r io.Reader
+type Reader struct {
+	r   io.Reader
 	err error
 	buf [8]byte
 }
@@ -16,7 +16,7 @@ func NewReader(r io.Reader) *Reader {
 	return &Reader{r: r}
 }
 
-func (r* Reader) Next() float64 {
+func (r *Reader) Next() float64 {
 	if r.err != nil {
 		return 0
 	}
@@ -26,6 +26,6 @@ func (r* Reader) Next() float64 {
 	return math.Float64frombits(binary.LittleEndian.Uint64(data))
 }
 
-func (r* Reader) Error() error {
+func (r *Reader) Error() error {
 	return r.err
 }
