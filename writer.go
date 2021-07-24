@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 	"unsafe"
@@ -60,7 +59,6 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 			continue
 		}
 		numColumns++
-		fmt.Println(f)
 		offset := firstElem.Field(i).UnsafeAddr() - firstElem.UnsafeAddr()
 
 		fieldPointer := func(idx int) unsafe.Pointer {
@@ -97,7 +95,6 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 		}
 
 		dataPageOffset := fileCounter.n
-		fmt.Println(pageHeader)
 		err = writePageHeader(ctx, w, pageHeader)
 		if err != nil {
 			return err
@@ -149,7 +146,6 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 		return err
 	}
 
-	fmt.Println("Writing", metadataLen.n)
 	err = binary.Write(w, binary.LittleEndian, int32(metadataLen.n))
 	if err != nil {
 		return err

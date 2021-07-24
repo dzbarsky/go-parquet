@@ -3,16 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"math/rand"
 	"os"
 	"testing"
 )
 
-func TestFloatWriter(t *testing.T) {
-	type v struct {
-		V float32 `parquet:"v"`
-	}
+type floatHolder struct {
+	F float32 `parquet:"f"`
+}
 
-	values := []v{{1}, {3}, {1}, {6}, {7}, {9}, {3}}
+func TestFloatWriter(t *testing.T) {
+
+	values := []floatHolder{{1}, {3}, {1}, {6}, {7}, {9}, {3}}
 
 	buf := bytes.NewBuffer(nil)
 	err := write(context.Background(), buf, values)
@@ -26,7 +28,7 @@ func TestFloatWriter(t *testing.T) {
 
 	f := newFile(data)
 
-	readValues := make([]v, f.NumRows())
+	readValues := make([]floatHolder, f.NumRows())
 	parse(f, readValues)
 
 	if len(values) != len(readValues) {
@@ -37,5 +39,53 @@ func TestFloatWriter(t *testing.T) {
 		if values[i] != readValues[i] {
 			t.Fatal("Bad at index", i)
 		}
+	}
+}
+
+func floatValues(n int) []floatHolder {
+	r := rand.New(rand.NewSource(0))
+	values := make([]floatHolder, n)
+	for i := range values {
+		values[i].F = r.Float32()
+	}
+	return values
+}
+
+var data []byte
+
+// BenchmarkFloatWriterPlain-16    	     302	   3891774 ns/op	 2330220 B/op	  200105 allocs/op
+func BenchmarkFloatWriterPlain(b *testing.B) {
+	values := floatValues(100000)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		buf := bytes.NewBuffer(nil)
+		err := write(context.Background(), buf, values)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		data = buf.Bytes()
+	}
+}
+
+// BenchmarkFloatReaderPlain-16    	    3846	    318899 ns/op	  804387 B/op	      36 allocs/op
+func BenchmarkFloatReaderPlain(b *testing.B) {
+	values := floatValues(100000)
+	buf := bytes.NewBuffer(nil)
+	err := write(context.Background(), buf, values)
+	if err != nil {
+		b.Fatal(err)
+	}
+	data = buf.Bytes()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		f := newFile(data)
+		out := make([]floatHolder, f.NumRows())
+		parse(f, out)
 	}
 }

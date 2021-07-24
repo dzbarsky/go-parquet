@@ -100,9 +100,10 @@ func parse(f *File, destStructs interface{}) {
 
 			//fmt.Println(col)
 
+			baseAddr := uintptr(firstElem.UnsafeAddr()) + uintptr(offset)
 			fieldPointer := func(idx int) unsafe.Pointer {
 				rowIdx := uintptr(previousRowGroupsTotalRows + idx)
-				return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + rowIdx*structSize + uintptr(offset))
+				return unsafe.Pointer(baseAddr + rowIdx*structSize)
 			}
 
 			switch dataPageHeader.DataPageHeader.Encoding {
