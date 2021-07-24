@@ -12,6 +12,7 @@ import (
 	"github.com/apache/thrift/lib/go/thrift"
 
 	"parquet/float"
+	"parquet/double"
 	"parquet/parquet"
 )
 
@@ -59,10 +60,10 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 			continue
 		}
 		numColumns++
-		offset := firstElem.Field(i).UnsafeAddr() - firstElem.UnsafeAddr()
+		firstAddr := firstElem.Field(i).UnsafeAddr()
 
 		fieldPointer := func(idx int) unsafe.Pointer {
-			return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + uintptr(idx)*structSize + uintptr(offset))
+			return unsafe.Pointer(firstAddr + uintptr(idx)*structSize)
 		}
 
 		buf := bytes.NewBuffer(nil)
@@ -76,8 +77,15 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 				err := fw.Write(val)
 				must(err)
 			}
+		case reflect.Float64:
+			dw := double.NewWriter(buf)
+			for j := 0; j < nStructs; j++ {
+				val := *(*float64)(fieldPointer(j))
+				err := dw.Write(val)
+				must(err)
+			}
 		default:
-			return errors.New("Unhandled kind " + ty.Kind().String())
+			return errors.New("Unhandled kind " + f.Type.Kind().String())
 		}
 		data := buf.Bytes()
 
