@@ -13,6 +13,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/golang/snappy"
+	"github.com/DataDog/zstd"
 
 	"parquet/bytearray"
 	"parquet/double"
@@ -190,6 +191,8 @@ func wrapReader(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Re
 	switch col.Codec {
 	case parquet.CompressionCodec_UNCOMPRESSED:
 		return r
+	case parquet.CompressionCodec_ZSTD:
+		return zstd.NewReader(r)
 	case parquet.CompressionCodec_SNAPPY:
 		data := make([]byte, header.CompressedPageSize)
 		_, err := io.ReadFull(r, data)
