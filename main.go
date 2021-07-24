@@ -175,27 +175,33 @@ func wrapReader(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Re
 	switch col.Codec {
 	case parquet.CompressionCodec_UNCOMPRESSED:
 		return r
+	default:
+		decompressed := readDecompressed(col, header, r)
+		return bytes.NewReader(decompressed)
+	}
+}
+
+func readDecompressed(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) []byte {
+	data := make([]byte, header.CompressedPageSize)
+	_, err := io.ReadFull(r, data)
+	must(err)
+
+	if col.Codec == parquet.CompressionCodec_UNCOMPRESSED {
+		return data
+	}
+
+	decompressed := make([]byte, header.UncompressedPageSize)
+
+	switch col.Codec {
 	case parquet.CompressionCodec_ZSTD:
-		data := make([]byte, header.CompressedPageSize)
-		_, err := io.ReadFull(r, data)
-		must(err)
-		decompressed := make([]byte, header.UncompressedPageSize)
 		decompressed, err = zstd.Decompress(decompressed, data)
-		must(err)
-
-		return bytes.NewReader(decompressed)
 	case parquet.CompressionCodec_SNAPPY:
-		data := make([]byte, header.CompressedPageSize)
-		_, err := io.ReadFull(r, data)
-		must(err)
-		decompressed := make([]byte, header.UncompressedPageSize)
 		decompressed, err = snappy.Decode(decompressed, data)
-		must(err)
-
-		return bytes.NewReader(decompressed)
 	default:
 		panic("Unsupported compression: " + col.Codec.String())
 	}
+	must(err)
+	return decompressed
 }
 
 func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.Reader) interface{} {
@@ -203,14 +209,14 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		panic("wrong page type")
 	}
 
-	r = wrapReader(col, header, r)
+	data := readDecompressed(col, header, r)
 
 	num := header.DictionaryPageHeader.NumValues
 
 	switch col.Type {
 	case parquet.Type_FLOAT:
 		vals := make([]float32, num)
-		fr := float.NewReader(r)
+		fr := float.NewReader(data)
 		for i := range vals {
 			vals[i] = fr.Next()
 		}
@@ -218,7 +224,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		return vals
 	case parquet.Type_DOUBLE:
 		vals := make([]float64, num)
-		dr := double.NewReader(r)
+		dr := double.NewReader(data)
 		for i := range vals {
 			vals[i] = dr.Next()
 		}
@@ -226,7 +232,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		return vals
 	case parquet.Type_INT32:
 		vals := make([]int32, num)
-		ir := int_32.NewReader(r)
+		ir := int_32.NewReader(data)
 		for i := range vals {
 			vals[i] = ir.Next()
 		}
@@ -234,7 +240,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		return vals
 	case parquet.Type_INT64:
 		vals := make([]int64, num)
-		ir := int_64.NewReader(r)
+		ir := int_64.NewReader(data)
 		for i := range vals {
 			vals[i] = ir.Next()
 		}
@@ -242,7 +248,7 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 		return vals
 	case parquet.Type_BYTE_ARRAY:
 		vals := make([][]byte, num)
-		bar := bytearray.NewReader(&byteReader{r})
+		bar := bytearray.NewReader(data)
 		for i := range vals {
 			vals[i] = bar.Next()
 		}

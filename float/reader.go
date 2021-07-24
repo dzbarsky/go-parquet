@@ -7,23 +7,28 @@ import (
 )
 
 type Reader struct {
-	r   io.Reader
 	err error
-	buf [4]byte
+	data []byte
+	offset int
 }
 
-func NewReader(r io.Reader) *Reader {
-	return &Reader{r: r}
+func NewReader(data []byte) *Reader {
+	return &Reader{data: data}
 }
 
 func (r *Reader) Next() float32 {
 	if r.err != nil {
 		return 0
 	}
-	data := r.buf[:]
-	// TODO: io.ReadFull would be safer
-	_, r.err = r.r.Read(data)
-	return math.Float32frombits(binary.LittleEndian.Uint32(data))
+
+	currOffset := r.offset
+	r.offset += 4
+	if r.offset > len(r.data) {
+		r.err = io.EOF
+		return 0
+	}
+
+	return math.Float32frombits(binary.LittleEndian.Uint32(r.data[currOffset:r.offset]))
 }
 
 func (r *Reader) Error() error {

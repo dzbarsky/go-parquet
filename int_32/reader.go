@@ -1,6 +1,7 @@
 package int_32
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 )
@@ -11,8 +12,8 @@ type Reader struct {
 	buf [4]byte
 }
 
-func NewReader(r io.Reader) *Reader {
-	return &Reader{r: r}
+func NewReader(data []byte) *Reader {
+	return &Reader{r: bytes.NewReader(data)}
 }
 
 func (r *Reader) Next() int32 {

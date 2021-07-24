@@ -5,19 +5,14 @@ import (
 	"io"
 )
 
-type reader interface {
-	io.Reader
-	io.ByteReader
-}
-
 type Reader struct {
-	r   reader
 	err error
-	buf [4]byte
+	data []byte
+	offset int
 }
 
-func NewReader(r reader) *Reader {
-	return &Reader{r: r}
+func NewReader(data []byte) *Reader {
+	return &Reader{data: data}
 }
 
 func (r *Reader) Next() []byte {
@@ -25,18 +20,25 @@ func (r *Reader) Next() []byte {
 		return nil
 	}
 
-	data := r.buf[:]
-	// TODO: io.ReadFull would be safer
-	_, r.err = r.r.Read(data)
-	if r.err != nil {
+	currOffset := r.offset
+	r.offset += 4
+	if r.offset > len(r.data) {
+		r.err = io.EOF
 		return nil
 	}
 
-	n := binary.LittleEndian.Uint32(data)
+	n := binary.LittleEndian.Uint32(r.data[currOffset:r.offset])
 
-	data = make([]byte, n)
-	_, r.err = io.ReadFull(r.r, data)
-	return data
+	currOffset = r.offset
+	r.offset += int(n)
+	if r.offset > len(r.data) {
+		r.err = io.EOF
+		return nil
+	}
+
+	ret := make([]byte, n)
+	copy(ret, r.data[currOffset:r.offset])
+	return ret
 }
 
 func (r *Reader) Error() error {
