@@ -6,8 +6,8 @@ import (
 )
 
 type Reader struct {
-	err error
-	data []byte
+	err    error
+	data   []byte
 	offset int
 }
 

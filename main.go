@@ -83,7 +83,6 @@ func parse(f *File, destStructs interface{}) {
 			//fmt.Println(col.MetaData)
 			dictOffset := col.MetaData.DictionaryPageOffset
 			if dictOffset != nil {
-				//fmt.Println("Will read dict from", *dictOffset)
 				_, err := r.Seek(*dictOffset, io.SeekStart)
 				must(err)
 				dictPageHeader, err := readPageHeader(ctx, r)
@@ -94,70 +93,93 @@ func parse(f *File, destStructs interface{}) {
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
-			//fmt.Println("Will read data from", dataOffset)
 			_, err := r.Seek(dataOffset, io.SeekStart)
 			must(err)
 			dataPageHeader, err := readPageHeader(ctx, r)
 			must(err)
 
 			//fmt.Println(col)
-			defs, vals := readDataPage(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, &byteReader{r})
-			//fmt.Println(col.MetaData)
-			//fmt.Println(dataPageHeader)
 
 			fieldPointer := func(idx int) unsafe.Pointer {
 				rowIdx := uintptr(previousRowGroupsTotalRows + idx)
 				return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + rowIdx*structSize + uintptr(offset))
 			}
 
-			//fmt.Println(vals)
-			//fmt.Println(dictVals)
+			switch dataPageHeader.DataPageHeader.Encoding {
+			case parquet.Encoding_PLAIN_DICTIONARY:
+				defs, vals := readDataPageRLE(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, &byteReader{r})
+				//fmt.Println(col.MetaData)
+				//fmt.Println(dataPageHeader)
 
-			// reflect way is slower but safer
-			// may want a hybrid approach if we get to decoding nested structures.
-			//s := reflect.ValueOf(&destStructs[idx]).Elem()
-			//floatVal := dictVals[v].(float64)
-			//s.Field(fieldIndex).SetFloat(floatVal)
+				//fmt.Println(vals)
+				//fmt.Println(dictVals)
 
-			// TODO: reading nullable values into a non-nullable field results in a 0-value
-			// We make an exception for floats because pandas encodes NaN as null.
-			switch col.MetaData.Type {
-			case parquet.Type_FLOAT:
-				values := dictVals.([]float32)
-				for i, v := range vals {
-					fmt.Println(fieldPointer(i))
-					if defs[i] == 0 {
-						*(*float32)(fieldPointer(i)) = float32(math.NaN())
-					} else {
-						*(*float32)(fieldPointer(i)) = values[v]
+				// reflect way is slower but safer
+				// may want a hybrid approach if we get to decoding nested structures.
+				//s := reflect.ValueOf(&destStructs[idx]).Elem()
+				//floatVal := dictVals[v].(float64)
+				//s.Field(fieldIndex).SetFloat(floatVal)
+
+				// TODO: reading nullable values into a non-nullable field results in a 0-value
+				// We make an exception for floats because pandas encodes NaN as null.
+				switch col.MetaData.Type {
+				case parquet.Type_FLOAT:
+					values := dictVals.([]float32)
+					for i, v := range vals {
+						if defs[i] == 0 {
+							*(*float32)(fieldPointer(i)) = float32(math.NaN())
+						} else {
+							*(*float32)(fieldPointer(i)) = values[v]
+						}
 					}
-				}
-			case parquet.Type_DOUBLE:
-				values := dictVals.([]float64)
-				for i, v := range vals {
-					if defs[i] == 0 {
-						*(*float64)(fieldPointer(i)) = math.NaN()
-					} else {
-						*(*float64)(fieldPointer(i)) = values[v]
+				case parquet.Type_DOUBLE:
+					values := dictVals.([]float64)
+					for i, v := range vals {
+						if defs[i] == 0 {
+							*(*float64)(fieldPointer(i)) = math.NaN()
+						} else {
+							*(*float64)(fieldPointer(i)) = values[v]
+						}
 					}
+				case parquet.Type_BYTE_ARRAY:
+					values := dictVals.([][]byte)
+					for i, v := range vals {
+						*(*[]byte)(fieldPointer(i)) = values[v]
+					}
+				case parquet.Type_INT32:
+					values := dictVals.([]int32)
+					for i, v := range vals {
+						*(*int32)(fieldPointer(i)) = values[v]
+					}
+				case parquet.Type_INT64:
+					values := dictVals.([]int64)
+					for i, v := range vals {
+						*(*int64)(fieldPointer(i)) = values[v]
+					}
+				default:
+					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
-			case parquet.Type_BYTE_ARRAY:
-				values := dictVals.([][]byte)
-				for i, v := range vals {
-					*(*[]byte)(fieldPointer(i)) = values[v]
-				}
-			case parquet.Type_INT32:
-				values := dictVals.([]int32)
-				for i, v := range vals {
-					*(*int32)(fieldPointer(i)) = values[v]
-				}
-			case parquet.Type_INT64:
-				values := dictVals.([]int64)
-				for i, v := range vals {
-					*(*int64)(fieldPointer(i)) = values[v]
+
+			case parquet.Encoding_PLAIN:
+				data := readDecompressed(col.MetaData, dataPageHeader, r)
+				switch col.MetaData.Type {
+				case parquet.Type_FLOAT:
+					fr := float.NewReader(data)
+					for i := 0; i < int(col.MetaData.NumValues); i++ {
+						*(*float32)(fieldPointer(i)) = fr.Next()
+					}
+					must(fr.Error())
+				case parquet.Type_DOUBLE:
+					dr := double.NewReader(data)
+					for i := 0; i < int(col.MetaData.NumValues); i++ {
+						*(*float64)(fieldPointer(i)) = dr.Next()
+					}
+					must(dr.Error())
+				default:
+					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
 			default:
-				panic("Cannot read type: " + col.MetaData.Type.String())
+				panic("wrong encoding: " + dataPageHeader.DataPageHeader.Encoding.String())
 			}
 		}
 		previousRowGroupsTotalRows += int(rowGroup.NumRows)
@@ -259,8 +281,8 @@ func readDictPage(col *parquet.ColumnMetaData, header *parquet.PageHeader, r io.
 	}
 }
 
-// readDataPage returns definition levels and values
-func readDataPage(
+// readDataPageRLE returns definition levels and values
+func readDataPageRLE(
 	col *parquet.ColumnMetaData,
 	repType parquet.FieldRepetitionType,
 	header *parquet.PageHeader,

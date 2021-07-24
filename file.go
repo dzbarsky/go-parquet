@@ -11,8 +11,10 @@ import (
 	"parquet/parquet"
 )
 
+const magic = "PAR1"
+
 func isMagic(d []byte) bool {
-	return string(d) == "PAR1"
+	return string(d) == magic
 }
 
 type File struct {
