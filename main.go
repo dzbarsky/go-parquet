@@ -36,10 +36,6 @@ func must(err error) {
 	}
 }
 
-func isMagic(d []byte) bool {
-	return string(d) == "PAR1"
-}
-
 func main() {
 	f, err := os.Open(os.Args[1])
 	must(err)
@@ -47,44 +43,28 @@ func main() {
 	data, err := io.ReadAll(f)
 	must(err)
 
-	fmt.Println(parse(data)[:5])
+	parquetFile := newFile(data)
+	destStructs := make([]Test, parquetFile.NumRows())
+	parse(parquetFile, destStructs)
+	fmt.Println(destStructs[:5])
 }
 
-func parse(data []byte) []Test {
+func parse(f *File, destStructs interface{}) {
 	ctx := context.TODO()
-
-	if !isMagic(data[:4]) || !isMagic(data[len(data)-4:]) {
-		panic("Not a parquet file")
-	}
-
-	// Read footer size from end
-	r := bytes.NewReader(data)
-	_, err := r.Seek(-8, io.SeekEnd)
-	must(err)
-	sizeBuf := make([]byte, 4)
-	_, err = io.ReadFull(r, sizeBuf)
-	must(err)
-	size := binary.LittleEndian.Uint32(sizeBuf)
-
-	// Read footer
-	_, err = r.Seek(-8-int64(size), io.SeekEnd)
-	must(err)
-	footerReader := thrift.NewTCompactProtocol(&thrift.StreamTransport{Reader: r})
-	fileMD := parquet.NewFileMetaData()
-	err = fileMD.Read(ctx, footerReader)
-	must(err)
-
+	r := f.r
+	
 	reps := map[string]parquet.FieldRepetitionType{}
-	for _, s := range fileMD.Schema {
+	for _, s := range f.metadata.Schema {
 		reps[s.Name] = *s.RepetitionType
 	}
 
-	destStructs := make([]Test, fileMD.NumRows)
 	previousRowGroupsTotalRows := 0
-	for _, rowGroup := range fileMD.RowGroups {
+	for _, rowGroup := range f.metadata.RowGroups {
 		for _, col := range rowGroup.Columns {
 			fieldIndex := -1
-			ty := reflect.TypeOf(destStructs[0])
+			firstElem := reflect.ValueOf(destStructs).Index(0)
+			ty := firstElem.Type()
+			structSize := ty.Size()
 			for i := 0; i < ty.NumField(); i++ {
 				tag := ty.Field(i).Tag.Get("parquet")
 				if tag == col.MetaData.PathInSchema[0] {
@@ -93,14 +73,11 @@ func parse(data []byte) []Test {
 				}
 			}
 			if fieldIndex == -1 {
-				//fmt.Printf("Ignoring column %s\n", col.MetaData.PathInSchema[0])
+				fmt.Printf("Ignoring column %s\n", col.MetaData.PathInSchema[0])
 				continue
 				// panic("field not found")
 			}
-			s := reflect.ValueOf(&destStructs[0]).Elem()
-			addr := s.UnsafeAddr()
-			addr2 := s.Field(fieldIndex).UnsafeAddr()
-			offset := addr2 - addr
+			offset := firstElem.Field(fieldIndex).UnsafeAddr() - firstElem.UnsafeAddr()
 
 			var dictVals interface{}
 			//fmt.Println(col.MetaData)
@@ -125,13 +102,13 @@ func parse(data []byte) []Test {
 
 	
 			//fmt.Println(col)
-			defs, vals := readDataPage(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, r)
+			defs, vals := readDataPage(col.MetaData, reps[col.MetaData.PathInSchema[0]], dataPageHeader, &byteReader{r})
 			//fmt.Println(col.MetaData)
 			//fmt.Println(dataPageHeader)
 
 			fieldPointer := func(idx int) unsafe.Pointer  {
-				rowIdx := previousRowGroupsTotalRows + idx
-				return unsafe.Pointer(uintptr(unsafe.Pointer(&destStructs[rowIdx])) + uintptr(offset))
+				rowIdx := uintptr(previousRowGroupsTotalRows + idx)
+				return unsafe.Pointer(uintptr(firstElem.UnsafeAddr()) + rowIdx * structSize + uintptr(offset))
 			}
 
 			//fmt.Println(vals)
@@ -149,6 +126,7 @@ func parse(data []byte) []Test {
 			case parquet.Type_FLOAT:
 				values := dictVals.([]float32)
 				for i, v := range vals {
+					fmt.Println(fieldPointer(i))
 					if defs[i] == 0 {
 						*(*float32)(fieldPointer(i)) = float32(math.NaN())
 					} else {
@@ -185,7 +163,6 @@ func parse(data []byte) []Test {
 		}
 		previousRowGroupsTotalRows += int(rowGroup.NumRows)
 	}
-	return destStructs
 }
 
 func readPageHeader(ctx context.Context, r io.Reader) (*parquet.PageHeader, error) {

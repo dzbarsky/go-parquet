@@ -12,10 +12,14 @@ func TestByteArray(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	structs := parse(data)
-	if len(structs) != 10 {
+
+	f := newFile(data)
+	if f.NumRows() != 10 {
 		t.Fatal("Wrong length")
 	}
+	structs := make([]s, f.NumRows())
+	parse(f, structs)
+
 	for i, s := range structs {
 		if string(s.TestBytes) != strconv.Itoa(i) {
 			t.Fatalf("Wrong at %d", i)
@@ -28,10 +32,14 @@ func TestFloat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	structs := parse(data)
-	if len(structs) != 10 {
+
+	f := newFile(data)
+	if f.NumRows() != 10 {
 		t.Fatal("Wrong length")
 	}
+	structs := make([]s, f.NumRows())
+	parse(f, structs)
+
 	for i, s := range structs {
 		if s.TestFloat != float64(i) {
 			t.Fatalf("Wrong at %d", i)
@@ -51,10 +59,14 @@ func TestFloatWithNaN(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	structs := parse(data)
-	if len(structs) != 4 {
+
+	f := newFile(data)
+	if f.NumRows() != 4 {
 		t.Fatal("Wrong length")
 	}
+	structs := make([]s, f.NumRows())
+	parse(f, structs)
+
 	expected := []float64{1, math.NaN(), 2, math.NaN()}
 	for i, s := range structs {
 		if !f64Equal(s.TestFloat, expected[i]) {
@@ -71,10 +83,14 @@ func TestInt(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			structs := parse(data)
-			if len(structs) != 10 {
+
+			f := newFile(data)
+			if f.NumRows() != 10 {
 				t.Fatal("Wrong length")
 			}
+			structs := make([]s, f.NumRows())
+			parse(f, structs)
+
 			for i, s := range structs {
 				if s.TestInt != int64(i) {
 					t.Fatalf("Wrong at %d", i)

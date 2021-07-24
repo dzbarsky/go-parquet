@@ -2,3 +2,4 @@
 *.swo
 *.test
 scratch
+benchmark_internal_test.go
