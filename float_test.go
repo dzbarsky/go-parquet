@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+
+	"parquet/parquet"
 )
 
 type floatHolder struct {
@@ -14,32 +16,40 @@ type floatHolder struct {
 }
 
 func TestFloatWriter(t *testing.T) {
-
 	values := []floatHolder{{1}, {3}, {1}, {6}, {7}, {9}, {3}}
 
-	buf := bytes.NewBuffer(nil)
-	err := write(context.Background(), buf, values)
-	if err != nil {
-		t.Fatal(err)
+	testCases := map[string][]writeOption{
+		"Default":          {},
+		"Plain Dictionary": {WithEncodingHint("f", parquet.Encoding_PLAIN_DICTIONARY)},
 	}
 
-	data := buf.Bytes()
+	for name, opts := range testCases {
+		t.Run(name, func(t *testing.T) {
+			buf := bytes.NewBuffer(nil)
+			err := write(context.Background(), buf, values, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	os.WriteFile("/tmp/out.parquet", data, 0666)
+			data := buf.Bytes()
 
-	f := newFile(data)
+			os.WriteFile("/tmp/out.parquet", data, 0666)
 
-	readValues := make([]floatHolder, f.NumRows())
-	parse(f, readValues)
+			f := newFile(data)
 
-	if len(values) != len(readValues) {
-		t.Fatal("bad length")
-	}
+			readValues := make([]floatHolder, f.NumRows())
+			parse(f, readValues)
 
-	for i := range values {
-		if values[i] != readValues[i] {
-			t.Fatal("Bad at index", i)
-		}
+			if len(values) != len(readValues) {
+				t.Fatal("bad length")
+			}
+
+			for i := range values {
+				if values[i] != readValues[i] {
+					t.Fatalf("Bad at index %v, wanted %v, got %v", i, values[i], readValues[i])
+				}
+			}
+		})
 	}
 }
 

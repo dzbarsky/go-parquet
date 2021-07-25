@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"math/rand"
 	"io"
+	"math/rand"
 	"os"
 	"testing"
 )

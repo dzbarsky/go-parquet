@@ -10,11 +10,11 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 
-	"parquet/float"
 	"parquet/double"
-	"parquet/parquet"
+	"parquet/float"
 	"parquet/int_32"
 	"parquet/int_64"
+	"parquet/parquet"
 )
 
 type byteCounter struct {
@@ -26,7 +26,26 @@ func (b *byteCounter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func write(ctx context.Context, w io.Writer, structs interface{}) error {
+type writeState struct {
+	encodingHint map[string]parquet.Encoding
+}
+
+type writeOption func(s *writeState)
+
+func WithEncodingHint(col string, encoding parquet.Encoding) writeOption {
+	return func(s *writeState) {
+		s.encodingHint[col] = encoding
+	}
+}
+
+func write(ctx context.Context, w io.Writer, structs interface{}, opts ...writeOption) error {
+	state := &writeState{
+		encodingHint: make(map[string]parquet.Encoding),
+	}
+	for _, opt := range opts {
+		opt(state)
+	}
+
 	rStructs := reflect.ValueOf(structs)
 	nStructs := rStructs.Len()
 
@@ -67,60 +86,149 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 			return unsafe.Pointer(firstAddr + uintptr(idx)*structSize)
 		}
 
-		var data [] byte
+		encoding, ok := state.encodingHint[tag]
+		if !ok {
+			// TODO: smarter logic for deciding best encoding
+			encoding = parquet.Encoding_PLAIN
+		}
 
 		kind := f.Type.Kind()
-		switch kind {
-		case reflect.Float32:
-			fw := float.NewWriter(nStructs)
-			for j := 0; j < nStructs; j++ {
-				fw.Write(*(*float32)(fieldPointer(j)))
+		var dataPageOffset int64
+		var dictionaryPageOffset *int64
+
+		switch encoding {
+		case parquet.Encoding_PLAIN:
+			var data []byte
+
+			switch kind {
+			case reflect.Float32:
+				fw := float.NewWriter(nStructs)
+				for j := 0; j < nStructs; j++ {
+					fw.Write(*(*float32)(fieldPointer(j)))
+				}
+				data = fw.Bytes()
+			case reflect.Float64:
+				dw := double.NewWriter(nStructs)
+				for j := 0; j < nStructs; j++ {
+					dw.Write(*(*float64)(fieldPointer(j)))
+				}
+				data = dw.Bytes()
+			case reflect.Int32:
+				iw := int_32.NewWriter(nStructs)
+				for j := 0; j < nStructs; j++ {
+					iw.Write(*(*int32)(fieldPointer(j)))
+				}
+				data = iw.Bytes()
+			case reflect.Int64:
+				iw := int_64.NewWriter(nStructs)
+				for j := 0; j < nStructs; j++ {
+					iw.Write(*(*int64)(fieldPointer(j)))
+				}
+				data = iw.Bytes()
+			default:
+				return errors.New("Unhandled kind " + f.Type.Kind().String())
 			}
-			data = fw.Bytes()
-		case reflect.Float64:
-			dw := double.NewWriter(nStructs)
-			for j := 0; j < nStructs; j++ {
-				dw.Write(*(*float64)(fieldPointer(j)))
+
+			pageHeader := &parquet.PageHeader{
+				Type:                 parquet.PageType_DATA_PAGE,
+				UncompressedPageSize: int32(len(data)),
+				CompressedPageSize:   int32(len(data)),
+				DataPageHeader: &parquet.DataPageHeader{
+					NumValues: int32(nStructs),
+					Encoding:  parquet.Encoding_PLAIN,
+					// TODO: fix these
+					DefinitionLevelEncoding: parquet.Encoding_PLAIN,
+					RepetitionLevelEncoding: parquet.Encoding_PLAIN,
+				},
 			}
-			data = dw.Bytes()
-		case reflect.Int32:
-			iw := int_32.NewWriter(nStructs)
-			for j := 0; j < nStructs; j++ {
-				iw.Write(*(*int32)(fieldPointer(j)))
+
+			dataPageOffset = int64(fileCounter.n)
+			err = writePageHeader(ctx, w, pageHeader)
+			if err != nil {
+				return err
 			}
-			data = iw.Bytes()
-		case reflect.Int64:
-			iw := int_64.NewWriter(nStructs)
-			for j := 0; j < nStructs; j++ {
-				iw.Write(*(*int64)(fieldPointer(j)))
+
+			_, err = w.Write(data)
+			if err != nil {
+				return err
 			}
-			data = iw.Bytes()
+		case parquet.Encoding_PLAIN_DICTIONARY:
+			var dictBytes, dataBytes []byte
+			var bitWidth int8
+			var nDictValues int
+
+			switch kind {
+			case reflect.Float32:
+				fd := NewFloatDict(nStructs)
+				for j := 0; j < nStructs; j++ {
+					fd.Write(*(*float32)(fieldPointer(j)))
+				}
+				nDictValues = fd.NDictValues()
+				dictBytes = fd.DictBytes()
+				bitWidth, dataBytes = fd.DataBytes()
+			default:
+				return errors.New("Unhandled kind " + f.Type.Kind().String())
+			}
+
+			dictPageHeader := &parquet.PageHeader{
+				Type:                 parquet.PageType_DICTIONARY_PAGE,
+				UncompressedPageSize: int32(len(dictBytes)),
+				CompressedPageSize:   int32(len(dictBytes)),
+				DictionaryPageHeader: &parquet.DictionaryPageHeader{
+					NumValues: int32(nDictValues),
+					Encoding:  parquet.Encoding_PLAIN,
+				},
+			}
+
+			currOffset := int64(fileCounter.n)
+			dictionaryPageOffset = &currOffset
+			err = writePageHeader(ctx, w, dictPageHeader)
+			if err != nil {
+				return err
+			}
+
+			_, err = w.Write(dictBytes)
+			if err != nil {
+				return err
+			}
+
+			// First byte is bitwidth, then next 4 bytes are the encoded data length
+			dataPageSize := int32(len(dataBytes) + 5)
+			dataPageHeader := &parquet.PageHeader{
+				Type:                 parquet.PageType_DATA_PAGE,
+				UncompressedPageSize: dataPageSize,
+				CompressedPageSize:   dataPageSize,
+				DataPageHeader: &parquet.DataPageHeader{
+					NumValues: int32(nStructs),
+					Encoding:  parquet.Encoding_PLAIN_DICTIONARY,
+					// TODO: fix these
+					DefinitionLevelEncoding: parquet.Encoding_PLAIN,
+					RepetitionLevelEncoding: parquet.Encoding_PLAIN,
+				},
+			}
+
+			dataPageOffset = int64(fileCounter.n)
+			err = writePageHeader(ctx, w, dataPageHeader)
+			if err != nil {
+				return err
+			}
+
+			_, err = w.Write([]byte{byte(bitWidth)})
+			if err != nil {
+				return err
+			}
+
+			/*err = binary.Write(w, binary.LittleEndian, int32(len(dataBytes)))
+			if err != nil {
+				return err
+			}*/
+
+			_, err = w.Write(dataBytes)
+			if err != nil {
+				return err
+			}
 		default:
-			return errors.New("Unhandled kind " + f.Type.Kind().String())
-		}
-
-		pageHeader := &parquet.PageHeader{
-			Type:                 parquet.PageType_DATA_PAGE,
-			UncompressedPageSize: int32(len(data)),
-			CompressedPageSize:   int32(len(data)),
-			DataPageHeader: &parquet.DataPageHeader{
-				NumValues: int32(nStructs),
-				Encoding:  parquet.Encoding_PLAIN,
-				// TODO: fix these
-				DefinitionLevelEncoding: parquet.Encoding_PLAIN,
-				RepetitionLevelEncoding: parquet.Encoding_PLAIN,
-			},
-		}
-
-		dataPageOffset := fileCounter.n
-		err = writePageHeader(ctx, w, pageHeader)
-		if err != nil {
-			return err
-		}
-
-		_, err = w.Write(data)
-		if err != nil {
-			return err
+			panic("Unhandled encoding " + encoding.String())
 		}
 
 		parquetTy := parquetType(kind)
@@ -136,7 +244,8 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 				NumValues:             int64(nStructs),
 				TotalUncompressedSize: int64(len(data)),
 				TotalCompressedSize:   int64(len(data)),
-				DataPageOffset:        int64(dataPageOffset),
+				DataPageOffset:        dataPageOffset,
+				DictionaryPageOffset:  dictionaryPageOffset,
 			},
 		})
 		schema = append(schema, &parquet.SchemaElement{

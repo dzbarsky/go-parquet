@@ -5,7 +5,7 @@ import (
 )
 
 type Writer struct {
-	buf []byte
+	buf   []byte
 	index int
 }
 

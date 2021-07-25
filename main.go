@@ -89,7 +89,7 @@ func parse(f *File, destStructs interface{}) {
 				must(err)
 
 				dictVals = readDictPage(col.MetaData, dictPageHeader, r)
-				//fmt.Println(dictVals)
+				fmt.Println("Dict", dictVals)
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
@@ -112,8 +112,8 @@ func parse(f *File, destStructs interface{}) {
 				//fmt.Println(col.MetaData)
 				//fmt.Println(dataPageHeader)
 
-				//fmt.Println(vals)
-				//fmt.Println(dictVals)
+				fmt.Println(vals)
+				fmt.Println(dictVals)
 
 				// reflect way is slower but safer
 				// may want a hybrid approach if we get to decoding nested structures.
@@ -127,7 +127,7 @@ func parse(f *File, destStructs interface{}) {
 				case parquet.Type_FLOAT:
 					values := dictVals.([]float32)
 					for i, v := range vals {
-						if defs[i] == 0 {
+						if len(defs) > 0 && defs[i] == 0 {
 							*(*float32)(fieldPointer(i)) = float32(math.NaN())
 						} else {
 							*(*float32)(fieldPointer(i)) = values[v]
@@ -136,7 +136,7 @@ func parse(f *File, destStructs interface{}) {
 				case parquet.Type_DOUBLE:
 					values := dictVals.([]float64)
 					for i, v := range vals {
-						if defs[i] == 0 {
+						if len(defs) > 0 && defs[i] == 0 {
 							*(*float64)(fieldPointer(i)) = math.NaN()
 						} else {
 							*(*float64)(fieldPointer(i)) = values[v]
@@ -163,7 +163,7 @@ func parse(f *File, destStructs interface{}) {
 
 			case parquet.Encoding_PLAIN:
 				data := readDecompressed(col.MetaData, dataPageHeader, r)
-				n := int(col.MetaData.NumValues);
+				n := int(col.MetaData.NumValues)
 				switch col.MetaData.Type {
 				case parquet.Type_FLOAT:
 					fr := float.NewReader(data)
@@ -320,12 +320,15 @@ func readDataPageRLE(
 	//fmt.Println(buf2)
 	r = bytes.NewReader(buf2)
 
+	fmt.Println("buf", r)
+
 	switch repType {
 	case parquet.FieldRepetitionType_REQUIRED:
 		buf := make([]byte, 1)
 		_, err := io.ReadFull(r, buf)
 		must(err)
 		bitWidth := int(buf[0])
+		fmt.Println("bw", bitWidth)
 
 		vals := make([]int32, header.DataPageHeader.NumValues)
 		hr := &hybridReader{r: r, bitWidth: bitWidth}
