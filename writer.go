@@ -13,6 +13,7 @@ import (
 	"parquet/float"
 	"parquet/double"
 	"parquet/parquet"
+	"parquet/int_32"
 )
 
 type byteCounter struct {
@@ -81,6 +82,12 @@ func write(ctx context.Context, w io.Writer, structs interface{}) error {
 				dw.Write(*(*float64)(fieldPointer(j)))
 			}
 			data = dw.Bytes()
+		case reflect.Int32:
+			iw := int_32.NewWriter(nStructs)
+			for j := 0; j < nStructs; j++ {
+				iw.Write(*(*int32)(fieldPointer(j)))
+			}
+			data = iw.Bytes()
 		default:
 			return errors.New("Unhandled kind " + f.Type.Kind().String())
 		}
@@ -165,6 +172,8 @@ func parquetType(kind reflect.Kind) parquet.Type {
 		return parquet.Type_FLOAT
 	case reflect.Float64:
 		return parquet.Type_DOUBLE
+	case reflect.Int32:
+		return parquet.Type_INT32
 	default:
 		panic("Unhandled kind " + kind.String())
 	}

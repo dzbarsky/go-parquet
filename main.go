@@ -163,19 +163,26 @@ func parse(f *File, destStructs interface{}) {
 
 			case parquet.Encoding_PLAIN:
 				data := readDecompressed(col.MetaData, dataPageHeader, r)
+				n := int(col.MetaData.NumValues);
 				switch col.MetaData.Type {
 				case parquet.Type_FLOAT:
 					fr := float.NewReader(data)
-					for i := 0; i < int(col.MetaData.NumValues); i++ {
+					for i := 0; i < n; i++ {
 						*(*float32)(fieldPointer(i)) = fr.Next()
 					}
 					must(fr.Error())
 				case parquet.Type_DOUBLE:
 					dr := double.NewReader(data)
-					for i := 0; i < int(col.MetaData.NumValues); i++ {
+					for i := 0; i < n; i++ {
 						*(*float64)(fieldPointer(i)) = dr.Next()
 					}
 					must(dr.Error())
+				case parquet.Type_INT32:
+					ir := int_32.NewReader(data)
+					for i := 0; i < n; i++ {
+						*(*int32)(fieldPointer(i)) = ir.Next()
+					}
+					must(ir.Error())
 				default:
 					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
