@@ -51,7 +51,9 @@ func (fd *floatDict) DataBytes() (int8, []byte) {
 	hw := newHybridWriter(buf, bitWidth)
 
 	for _, v := range fd.values {
-		hw.Write(v)
+		err := hw.Write(v)
+		must(err)
 	}
+	must(hw.Flush())
 	return int8(bitWidth), buf.Bytes()
 }

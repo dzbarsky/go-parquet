@@ -31,6 +31,12 @@ func (hw *hybridWriter) Write(v int32) error {
 		return nil
 	}
 
+	err := hw.Flush()
+	hw.currRLEVal = v
+	return err
+}
+
+func (hw *hybridWriter) Flush() error {
 	n := binary.PutUvarint(hw.scratch[:], uint64(hw.currRLELength<<1))
 	_, err := hw.w.Write(hw.scratch[:n])
 	if err != nil {
@@ -46,10 +52,5 @@ func (hw *hybridWriter) Write(v int32) error {
 	}
 
 	_, err = hw.w.Write(buf)
-	if err != nil {
-		return err
-	}
-
-	hw.currRLEVal = v
-	return nil
+	return err
 }
