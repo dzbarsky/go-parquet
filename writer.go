@@ -10,6 +10,7 @@ import (
 
 	"github.com/apache/thrift/lib/go/thrift"
 
+	"parquet/bytearray"
 	"parquet/double"
 	"parquet/float"
 	"parquet/int_32"
@@ -125,6 +126,24 @@ func write(ctx context.Context, w io.Writer, structs interface{}, opts ...writeO
 					iw.Write(*(*int64)(fieldPointer(j)))
 				}
 				data = iw.Bytes()
+			case reflect.Slice:
+				elemKind := f.Type.Elem().Kind()
+
+				switch elemKind {
+				case reflect.Uint8:
+					var totalLen int
+					for j := 0; j < nStructs; j++ {
+						totalLen += len(*(*[]byte)(fieldPointer(j)))
+					}
+
+					baw := bytearray.NewWriter(totalLen, nStructs)
+					for j := 0; j < nStructs; j++ {
+						baw.Write(*(*[]byte)(fieldPointer(j)))
+					}
+					data = baw.Bytes()
+				default:
+					return errors.New("Unhandled kind []" + elemKind.String())
+				}
 			default:
 				return errors.New("Unhandled kind " + f.Type.Kind().String())
 			}
@@ -231,7 +250,7 @@ func write(ctx context.Context, w io.Writer, structs interface{}, opts ...writeO
 			panic("Unhandled encoding " + encoding.String())
 		}
 
-		parquetTy := parquetType(kind)
+		parquetTy := parquetType(f.Type)
 		columns = append(columns, &parquet.ColumnChunk{
 			// TODO: hax, figure this out?
 			FileOffset: 2,
@@ -282,7 +301,8 @@ func write(ctx context.Context, w io.Writer, structs interface{}, opts ...writeO
 	return err
 }
 
-func parquetType(kind reflect.Kind) parquet.Type {
+func parquetType(ty reflect.Type) parquet.Type {
+	kind := ty.Kind()
 	switch kind {
 	case reflect.Float32:
 		return parquet.Type_FLOAT
@@ -292,6 +312,14 @@ func parquetType(kind reflect.Kind) parquet.Type {
 		return parquet.Type_INT32
 	case reflect.Int64:
 		return parquet.Type_INT64
+	case reflect.Slice:
+		elemKind := ty.Elem().Kind()
+		switch elemKind {
+		case reflect.Uint8:
+			return parquet.Type_BYTE_ARRAY
+		default:
+			panic("Unhandled kind []" + elemKind.String())
+		}
 	default:
 		panic("Unhandled kind " + kind.String())
 	}

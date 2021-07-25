@@ -189,6 +189,11 @@ func parse(f *File, destStructs interface{}) {
 						*(*int64)(fieldPointer(i)) = ir.Next()
 					}
 					must(ir.Error())
+				case parquet.Type_BYTE_ARRAY:
+					bar := bytearray.NewReader(data)
+					for i := 0; i < n; i++ {
+						*(*[]byte)(fieldPointer(i)) = bar.Next()
+					}
 				default:
 					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
