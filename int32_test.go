@@ -66,7 +66,7 @@ func BenchmarkInt32WriterPlain(b *testing.B) {
 	}
 }
 
-// BenchmarkInt32ReaderPlain-16    	    1077	   1089503 ns/op	  804486 B/op	      38 allocs/op
+// BenchmarkInt32ReaderPlain-16    	    3607	    309951 ns/op	  804386 B/op	      36 allocs/op
 func BenchmarkInt32ReaderPlain(b *testing.B) {
 	values := int32Values(100000)
 	buf := bytes.NewBuffer(nil)
