@@ -89,7 +89,7 @@ func parse(f *File, destStructs interface{}) {
 				must(err)
 
 				dictVals = readDictPage(col.MetaData, dictPageHeader, r)
-				fmt.Println("Dict", dictVals)
+				//fmt.Println("Dict", dictVals)
 			}
 
 			dataOffset := col.MetaData.DataPageOffset
@@ -112,8 +112,8 @@ func parse(f *File, destStructs interface{}) {
 				//fmt.Println(col.MetaData)
 				//fmt.Println(dataPageHeader)
 
-				fmt.Println(vals)
-				fmt.Println(dictVals)
+				//fmt.Println(vals)
+				//fmt.Println(dictVals)
 
 				// reflect way is slower but safer
 				// may want a hybrid approach if we get to decoding nested structures.
@@ -324,8 +324,6 @@ func readDataPageRLE(
 	must(err2)
 	//fmt.Println(buf2)
 	r = bytes.NewReader(buf2)
-
-	fmt.Println("buf", r)
 
 	switch repType {
 	case parquet.FieldRepetitionType_REQUIRED:

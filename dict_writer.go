@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"math/bits"
 
 	"parquet/float"
@@ -45,15 +44,11 @@ func (fd *floatDict) DictBytes() []byte {
 }
 
 func (fd *floatDict) DataBytes() (int8, []byte) {
-	buf := bytes.NewBuffer(nil)
-
 	bitWidth := bits.Len(uint(len(fd.dictValues) - 1))
-	hw := newHybridWriter(buf, bitWidth)
+	hw := newHybridWriter(len(fd.values), bitWidth)
 
 	for _, v := range fd.values {
-		err := hw.Write(v)
-		must(err)
+		hw.Write(v)
 	}
-	must(hw.Flush())
-	return int8(bitWidth), buf.Bytes()
+	return int8(bitWidth), hw.Flush()
 }

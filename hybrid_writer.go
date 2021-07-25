@@ -2,13 +2,13 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
-	"io"
 )
 
 type hybridWriter struct {
-	w        io.Writer
-	bitWidth int
+	buf []byte
+	offset int
+
+	bitWidthNBytes int
 
 	// TODO: we aren't doing any bitpacking yet
 
@@ -17,40 +17,51 @@ type hybridWriter struct {
 	scratch       [4]byte
 }
 
-func newHybridWriter(w io.Writer, bitWidth int) *hybridWriter {
-	fmt.Println("write bw", bitWidth)
+func newHybridWriter(nValues, bitWidth int) *hybridWriter {
+	bitWidthNBytes := (bitWidth+7)/8
 	return &hybridWriter{
-		w:        w,
-		bitWidth: bitWidth,
+		buf: make([]byte, nValues * (binary.MaxVarintLen64 + bitWidthNBytes)),
+		bitWidthNBytes: bitWidthNBytes,
 	}
 }
 
-func (hw *hybridWriter) Write(v int32) error {
+func (hw *hybridWriter) Write(v int32) {
 	if v == hw.currRLEVal {
 		hw.currRLELength += 1
-		return nil
+		return
 	}
 
-	err := hw.Flush()
+	hw.flush()
 	hw.currRLEVal = v
-	return err
 }
 
-func (hw *hybridWriter) Flush() error {
-	n := binary.PutUvarint(hw.scratch[:], uint64(hw.currRLELength<<1))
-	_, err := hw.w.Write(hw.scratch[:n])
-	if err != nil {
-		return err
-	}
+func (hw *hybridWriter) Flush() []byte {
+	hw.flush()
+	return hw.buf[:hw.offset]
+}
 
-	buf := make([]byte, (hw.bitWidth+7)/8)
-	switch len(buf) {
+func (hw *hybridWriter) flush() {
+	n := binary.PutUvarint(hw.buf[hw.offset:], uint64(hw.currRLELength<<1))
+	hw.offset += n
+
+	switch hw.bitWidthNBytes {
 	case 1:
-		buf[0] = byte(hw.currRLEVal)
+		hw.buf[hw.offset] = byte(hw.currRLEVal)
+	case 2:
+		hw.buf[hw.offset]  = byte(hw.currRLEVal)
+		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
+	case 3:
+		hw.buf[hw.offset]  = byte(hw.currRLEVal)
+		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
+		hw.buf[hw.offset+2] = byte(hw.currRLEVal>>16)
+	case 4:
+		hw.buf[hw.offset]  = byte(hw.currRLEVal)
+		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
+		hw.buf[hw.offset+2] = byte(hw.currRLEVal>>16)
+		hw.buf[hw.offset+3] = byte(hw.currRLEVal>>24)
 	default:
 		panic("Bad int size")
 	}
 
-	_, err = hw.w.Write(buf)
-	return err
+	hw.offset += hw.bitWidthNBytes
 }

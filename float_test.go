@@ -78,6 +78,21 @@ func BenchmarkFloatWriterPlain(b *testing.B) {
 	}
 }
 
+// BenchmarkFloatWriterDictionary-16    	     147	   7941223 ns/op	 4116423 B/op	    1772 allocs/op
+func BenchmarkFloatWriterDictionary(b *testing.B) {
+	values := floatValues(100000)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		err := write(context.Background(), io.Discard, values,
+			WithEncodingHint("f", parquet.Encoding_PLAIN_DICTIONARY))
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkFloatReaderPlain-16    	    3846	    318899 ns/op	  804387 B/op	      36 allocs/op
 func BenchmarkFloatReaderPlain(b *testing.B) {
 	values := floatValues(100000)
