@@ -1,29 +1,33 @@
 package int_64
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 )
 
 type Reader struct {
-	r   io.Reader
-	err error
-	buf [8]byte
+	err    error
+	data   []byte
+	offset int
 }
 
 func NewReader(data []byte) *Reader {
-	return &Reader{r: bytes.NewReader(data)}
+	return &Reader{data: data}
 }
 
 func (r *Reader) Next() int64 {
 	if r.err != nil {
 		return 0
 	}
-	data := r.buf[:]
-	// TODO: io.ReadFull would be safer
-	_, r.err = r.r.Read(data)
-	return int64(binary.LittleEndian.Uint64(data))
+
+	currOffset := r.offset
+	r.offset += 8
+	if r.offset > len(r.data) {
+		r.err = io.EOF
+		return 0
+	}
+
+	return int64(binary.LittleEndian.Uint64(r.data[currOffset:r.offset]))
 }
 
 func (r *Reader) Error() error {

@@ -183,6 +183,12 @@ func parse(f *File, destStructs interface{}) {
 						*(*int32)(fieldPointer(i)) = ir.Next()
 					}
 					must(ir.Error())
+				case parquet.Type_INT64:
+					ir := int_64.NewReader(data)
+					for i := 0; i < n; i++ {
+						*(*int64)(fieldPointer(i)) = ir.Next()
+					}
+					must(ir.Error())
 				default:
 					panic("Cannot read type: " + col.MetaData.Type.String())
 				}
