@@ -5,7 +5,7 @@ import (
 )
 
 type hybridWriter struct {
-	buf []byte
+	buf    []byte
 	offset int
 
 	bitWidthNBytes int
@@ -18,9 +18,9 @@ type hybridWriter struct {
 }
 
 func newHybridWriter(nValues, bitWidth int) *hybridWriter {
-	bitWidthNBytes := (bitWidth+7)/8
+	bitWidthNBytes := (bitWidth + 7) / 8
 	return &hybridWriter{
-		buf: make([]byte, nValues * (binary.MaxVarintLen64 + bitWidthNBytes)),
+		buf:            make([]byte, nValues*(binary.MaxVarintLen64+bitWidthNBytes)),
 		bitWidthNBytes: bitWidthNBytes,
 	}
 }
@@ -44,21 +44,26 @@ func (hw *hybridWriter) flush() {
 	n := binary.PutUvarint(hw.buf[hw.offset:], uint64(hw.currRLELength<<1))
 	hw.offset += n
 
+	buf := hw.buf[hw.offset:]
+
 	switch hw.bitWidthNBytes {
 	case 1:
-		hw.buf[hw.offset] = byte(hw.currRLEVal)
+		buf[0] = byte(hw.currRLEVal)
 	case 2:
-		hw.buf[hw.offset]  = byte(hw.currRLEVal)
-		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
+		_ = buf[1]
+		buf[0] = byte(hw.currRLEVal)
+		buf[1] = byte(hw.currRLEVal >> 8)
 	case 3:
-		hw.buf[hw.offset]  = byte(hw.currRLEVal)
-		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
-		hw.buf[hw.offset+2] = byte(hw.currRLEVal>>16)
+		_ = buf[2]
+		buf[0] = byte(hw.currRLEVal)
+		buf[1] = byte(hw.currRLEVal >> 8)
+		buf[2] = byte(hw.currRLEVal >> 16)
 	case 4:
-		hw.buf[hw.offset]  = byte(hw.currRLEVal)
-		hw.buf[hw.offset+1] = byte(hw.currRLEVal>>8)
-		hw.buf[hw.offset+2] = byte(hw.currRLEVal>>16)
-		hw.buf[hw.offset+3] = byte(hw.currRLEVal>>24)
+		_ = buf[3]
+		buf[0] = byte(hw.currRLEVal)
+		buf[1] = byte(hw.currRLEVal >> 8)
+		buf[2] = byte(hw.currRLEVal >> 16)
+		buf[3] = byte(hw.currRLEVal >> 24)
 	default:
 		panic("Bad int size")
 	}
